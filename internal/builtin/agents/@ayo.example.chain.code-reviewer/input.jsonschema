@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "properties": {
+    "repo": {
+      "type": "string",
+      "description": "Repository path or name"
+    },
+    "files": {
+      "type": "array",
+      "description": "List of file paths to review",
+      "items": {
+        "type": "string"
+      }
+    },
+    "context": {
+      "type": "string",
+      "description": "Additional context about the changes"
+    }
+  },
+  "required": ["repo", "files"]
+}

@@ -1,0 +1,55 @@
+{
+  "type": "object",
+  "properties": {
+    "report_title": {
+      "type": "string",
+      "description": "Title for the report"
+    },
+    "total_issues": {
+      "type": "integer",
+      "description": "Total number of issues found"
+    },
+    "high_severity_count": {
+      "type": "integer",
+      "description": "Number of high severity issues"
+    },
+    "medium_severity_count": {
+      "type": "integer",
+      "description": "Number of medium severity issues"
+    },
+    "low_severity_count": {
+      "type": "integer",
+      "description": "Number of low severity issues"
+    },
+    "formatted_issues": {
+      "type": "array",
+      "description": "Formatted issue entries",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Issue title"
+          },
+          "body": {
+            "type": "string",
+            "description": "Formatted issue body in markdown"
+          },
+          "labels": {
+            "type": "array",
+            "description": "Suggested labels",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["title", "body"]
+      }
+    },
+    "overall_assessment": {
+      "type": "string",
+      "description": "Overall assessment text"
+    }
+  },
+  "required": ["report_title", "total_issues", "formatted_issues", "overall_assessment"]
+}

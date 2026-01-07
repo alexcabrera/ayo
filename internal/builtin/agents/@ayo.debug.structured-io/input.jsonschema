@@ -1,0 +1,31 @@
+{
+  "type": "object",
+  "properties": {
+    "service": {
+      "type": "string",
+      "description": "Name of the service to deploy",
+      "minLength": 1
+    },
+    "environment": {
+      "type": "string",
+      "description": "Target deployment environment",
+      "enum": ["dev", "staging", "prod"]
+    },
+    "version": {
+      "type": "string",
+      "description": "Semantic version to deploy (e.g., 1.2.3)"
+    },
+    "notify": {
+      "type": "array",
+      "description": "Email addresses to notify after deployment",
+      "items": {
+        "type": "string"
+      }
+    },
+    "dry_run": {
+      "type": "boolean",
+      "description": "If true, simulate deployment without making changes"
+    }
+  },
+  "required": ["service", "environment", "version"]
+}
