@@ -1,4 +1,14 @@
 // Package paths provides directory paths for ayo.
+//
+// Directory Priority Order (first found wins for lookups):
+//  1. ./.config/ayo (local project config)
+//  2. ./.local/share/ayo (local project data)
+//  3. ~/.config/ayo (user config)
+//  4. ~/.local/share/ayo (user data / built-ins)
+//
+// For writes, ayo uses:
+//   - User agents/skills: ~/.config/ayo (or ./.config/ayo with --dev)
+//   - Built-in installation: ~/.local/share/ayo (or ./.local/share/ayo with --dev)
 package paths
 
 import (
@@ -12,6 +22,10 @@ import (
 var (
 	devRoot     string
 	devRootOnce sync.Once
+
+	// localDevMode is set by SetLocalDevMode to force local directory paths
+	localDevMode     bool
+	localDevModeOnce sync.Once
 )
 
 // IsDevMode returns true if ayo is running from a source checkout.
@@ -88,8 +102,23 @@ func findDevRootFrom(startDir string) string {
 	return ""
 }
 
+// SetLocalDevMode enables local dev mode, which uses ./.local/share/ayo and ./.config/ayo
+// instead of the default directories. This is typically set via the --dev flag on setup.
+// Must be called before any directory functions are used.
+func SetLocalDevMode() {
+	localDevModeOnce.Do(func() {
+		localDevMode = true
+	})
+}
+
+// IsLocalDevMode returns true if local dev mode is enabled via SetLocalDevMode.
+func IsLocalDevMode() bool {
+	return localDevMode
+}
+
 // DataDir returns the data directory for ayo.
 //
+// Local dev mode: ./.local/share/ayo (current directory)
 // Dev mode: {repo}/.ayo (project-local built-ins)
 // Production Unix: ~/.local/share/ayo (XDG compliant)
 // Production Windows: %LOCALAPPDATA%\ayo
@@ -97,6 +126,11 @@ func findDevRootFrom(startDir string) string {
 // This directory stores built-in agents, built-in skills, and version markers.
 // In dev mode, each checkout has its own isolated built-ins.
 func DataDir() string {
+	if localDevMode {
+		wd, _ := os.Getwd()
+		return filepath.Join(wd, ".local", "share", "ayo")
+	}
+
 	if root := getDevRoot(); root != "" {
 		return filepath.Join(root, ".ayo")
 	}
@@ -116,13 +150,19 @@ func DataDir() string {
 
 // ConfigDir returns the config directory for ayo.
 //
+// Local dev mode: ./.config/ayo (current directory)
 // Unix (macOS, Linux): ~/.config/ayo
 // Windows: %LOCALAPPDATA%\ayo (same as production DataDir)
 //
 // This directory stores user configuration and user-created content:
 // config.yaml, user agents, user skills, and system prompts.
-// This is always the global user directory, even in dev mode.
+// This is always the global user directory, even in dev mode (unless local dev mode).
 func ConfigDir() string {
+	if localDevMode {
+		wd, _ := os.Getwd()
+		return filepath.Join(wd, ".config", "ayo")
+	}
+
 	if runtime.GOOS == "windows" {
 		localAppData := os.Getenv("LOCALAPPDATA")
 		if localAppData == "" {
@@ -183,4 +223,126 @@ func SystemPromptsDir() string {
 // Production: ~/.local/share/ayo/.builtin-version (Unix) or %LOCALAPPDATA%\ayo\.builtin-version (Windows)
 func VersionFile() string {
 	return filepath.Join(DataDir(), ".builtin-version")
+}
+
+// LocalConfigDir returns the local project config directory (./.config/ayo).
+// Returns empty string if not in a directory context or on Windows.
+func LocalConfigDir() string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(wd, ".config", "ayo")
+}
+
+// LocalDataDir returns the local project data directory (./.local/share/ayo).
+// Returns empty string if not in a directory context or on Windows.
+func LocalDataDir() string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(wd, ".local", "share", "ayo")
+}
+
+// UserConfigDir returns the global user config directory (~/.config/ayo).
+// On Windows, returns %LOCALAPPDATA%\ayo.
+func UserConfigDir() string {
+	if runtime.GOOS == "windows" {
+		localAppData := os.Getenv("LOCALAPPDATA")
+		if localAppData == "" {
+			home, _ := os.UserHomeDir()
+			localAppData = filepath.Join(home, "AppData", "Local")
+		}
+		return filepath.Join(localAppData, "ayo")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "ayo")
+}
+
+// UserDataDir returns the global user data directory (~/.local/share/ayo).
+// On Windows, returns %LOCALAPPDATA%\ayo.
+func UserDataDir() string {
+	if runtime.GOOS == "windows" {
+		localAppData := os.Getenv("LOCALAPPDATA")
+		if localAppData == "" {
+			home, _ := os.UserHomeDir()
+			localAppData = filepath.Join(home, "AppData", "Local")
+		}
+		return filepath.Join(localAppData, "ayo")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".local", "share", "ayo")
+}
+
+// HasLocalConfig returns true if a local config directory exists (./.config/ayo).
+func HasLocalConfig() bool {
+	dir := LocalConfigDir()
+	if dir == "" {
+		return false
+	}
+	info, err := os.Stat(dir)
+	return err == nil && info.IsDir()
+}
+
+// HasLocalData returns true if a local data directory exists (./.local/share/ayo).
+func HasLocalData() bool {
+	dir := LocalDataDir()
+	if dir == "" {
+		return false
+	}
+	info, err := os.Stat(dir)
+	return err == nil && info.IsDir()
+}
+
+// AgentsDirs returns all agent directories in lookup priority order.
+// Order: local config, local data, user config, user data (built-in).
+// Only includes directories that exist.
+func AgentsDirs() []string {
+	var dirs []string
+	check := func(base string) {
+		if base == "" {
+			return
+		}
+		dir := filepath.Join(base, "agents")
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			dirs = append(dirs, dir)
+		}
+	}
+
+	check(LocalConfigDir())
+	check(LocalDataDir())
+	check(UserConfigDir())
+	check(UserDataDir())
+
+	return dirs
+}
+
+// SkillsDirs returns all skills directories in lookup priority order.
+// Order: local config, local data, user config, user data (built-in).
+// Only includes directories that exist.
+func SkillsDirs() []string {
+	var dirs []string
+	check := func(base string) {
+		if base == "" {
+			return
+		}
+		dir := filepath.Join(base, "skills")
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			dirs = append(dirs, dir)
+		}
+	}
+
+	check(LocalConfigDir())
+	check(LocalDataDir())
+	check(UserConfigDir())
+	check(UserDataDir())
+
+	return dirs
 }

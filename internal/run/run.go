@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"mime"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -79,12 +82,15 @@ func (r *Runner) Chat(ctx context.Context, ag agent.Agent, input string) (string
 
 // Text runs a single prompt without maintaining history.
 func (r *Runner) Text(ctx context.Context, ag agent.Agent, prompt string, attachments []string) (string, error) {
-	msgs := r.buildMessages(ag, prompt)
-	// TODO: handle attachments with Fantasy file upload
+	msgs := r.buildMessagesWithAttachments(ag, prompt, attachments)
 	return r.runChat(ctx, ag, msgs)
 }
 
 func (r *Runner) buildMessages(ag agent.Agent, prompt string) []fantasy.Message {
+	return r.buildMessagesWithAttachments(ag, prompt, nil)
+}
+
+func (r *Runner) buildMessagesWithAttachments(ag agent.Agent, prompt string, attachments []string) []fantasy.Message {
 	var msgs []fantasy.Message
 	if strings.TrimSpace(ag.CombinedSystem) != "" {
 		msgs = append(msgs, fantasy.NewSystemMessage(ag.CombinedSystem))
@@ -95,8 +101,76 @@ func (r *Runner) buildMessages(ag agent.Agent, prompt string) []fantasy.Message 
 	if strings.TrimSpace(ag.SkillsPrompt) != "" {
 		msgs = append(msgs, fantasy.NewSystemMessage(ag.SkillsPrompt))
 	}
-	msgs = append(msgs, fantasy.NewUserMessage(prompt))
+
+	// Build file parts from attachments
+	// Text files are inlined into the prompt; binary files use FilePart
+	var fileParts []fantasy.FilePart
+	var textAttachments []string
+
+	for _, path := range attachments {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			// Skip files that can't be read, but include error in prompt
+			prompt = fmt.Sprintf("%s\n\n[Error reading %s: %v]", prompt, path, err)
+			continue
+		}
+
+		// Determine media type from extension
+		ext := filepath.Ext(path)
+		mediaType := mime.TypeByExtension(ext)
+		if mediaType == "" {
+			mediaType = "text/plain" // Default for unknown types
+		}
+
+		// Text files: inline into prompt (providers don't handle text FileParts well)
+		// Binary files (images, PDFs, audio): use FilePart
+		if isTextMediaType(mediaType) {
+			textAttachments = append(textAttachments, fmt.Sprintf("<file path=%q>\n%s\n</file>", filepath.Base(path), string(data)))
+		} else {
+			fileParts = append(fileParts, fantasy.FilePart{
+				Filename:  filepath.Base(path),
+				Data:      data,
+				MediaType: mediaType,
+			})
+		}
+	}
+
+	// Prepend text attachments to prompt
+	if len(textAttachments) > 0 {
+		prompt = strings.Join(textAttachments, "\n\n") + "\n\n" + prompt
+	}
+
+	msgs = append(msgs, fantasy.NewUserMessage(prompt, fileParts...))
 	return msgs
+}
+
+// isTextMediaType returns true if the media type represents text content
+// that should be inlined rather than sent as a binary file part.
+func isTextMediaType(mediaType string) bool {
+	// Check for explicit text types
+	if strings.HasPrefix(mediaType, "text/") {
+		return true
+	}
+	// Common text-based types that don't start with text/
+	textTypes := []string{
+		"application/json",
+		"application/xml",
+		"application/javascript",
+		"application/typescript",
+		"application/x-yaml",
+		"application/yaml",
+		"application/toml",
+		"application/x-sh",
+		"application/x-shellscript",
+	}
+	// Strip parameters (e.g., "text/plain; charset=utf-8" -> "text/plain")
+	baseType := strings.Split(mediaType, ";")[0]
+	for _, t := range textTypes {
+		if baseType == t {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Runner) runChat(ctx context.Context, ag agent.Agent, msgs []fantasy.Message) (string, error) {

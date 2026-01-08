@@ -2,6 +2,8 @@ package run
 
 import (
 	"context"
+	"os"
+	"strings"
 	"testing"
 
 	"charm.land/fantasy"
@@ -62,4 +64,99 @@ func getTextContent(msg fantasy.Message) string {
 		}
 	}
 	return ""
+}
+
+func TestBuildMessagesWithTextAttachment(t *testing.T) {
+	// Create a temp text file for testing
+	tmpDir := t.TempDir()
+	testFile := tmpDir + "/test.txt"
+	if err := os.WriteFile(testFile, []byte("file contents"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	r := &Runner{}
+	ag := agent.Agent{CombinedSystem: "SYS", Model: "m"}
+	msgs := r.buildMessagesWithAttachments(ag, "summarize", []string{testFile})
+
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages (system + user), got %d", len(msgs))
+	}
+
+	// Check user message has text with inlined file content (text files are inlined, not FilePart)
+	userMsg := msgs[1]
+	if userMsg.Role != fantasy.MessageRoleUser {
+		t.Fatalf("expected user role, got %s", userMsg.Role)
+	}
+
+	content := getTextContent(userMsg)
+	// Text files should be inlined in XML-like format
+	if !strings.Contains(content, "<file path=\"test.txt\">") {
+		t.Errorf("expected inlined file tag, got %q", content)
+	}
+	if !strings.Contains(content, "file contents") {
+		t.Errorf("expected file contents in prompt, got %q", content)
+	}
+	if !strings.Contains(content, "summarize") {
+		t.Errorf("expected original prompt, got %q", content)
+	}
+
+	// Text files should NOT create FilePart
+	for _, part := range userMsg.Content {
+		if _, ok := part.(fantasy.FilePart); ok {
+			t.Error("text files should be inlined, not sent as FilePart")
+		}
+	}
+}
+
+func TestBuildMessagesWithBinaryAttachment(t *testing.T) {
+	// Create a temp PNG file for testing (binary file should use FilePart)
+	tmpDir := t.TempDir()
+	testFile := tmpDir + "/test.png"
+	// Minimal PNG header bytes
+	pngData := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+	if err := os.WriteFile(testFile, pngData, 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	r := &Runner{}
+	ag := agent.Agent{Model: "m"}
+	msgs := r.buildMessagesWithAttachments(ag, "describe", []string{testFile})
+
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+
+	userMsg := msgs[0]
+	var hasFile bool
+	for _, part := range userMsg.Content {
+		if fp, ok := part.(fantasy.FilePart); ok {
+			hasFile = true
+			if fp.Filename != "test.png" {
+				t.Errorf("expected filename 'test.png', got %q", fp.Filename)
+			}
+			if !strings.HasPrefix(fp.MediaType, "image/png") {
+				t.Errorf("expected image/png media type, got %q", fp.MediaType)
+			}
+		}
+	}
+
+	if !hasFile {
+		t.Error("binary files should be sent as FilePart")
+	}
+}
+
+func TestBuildMessagesWithMissingAttachment(t *testing.T) {
+	r := &Runner{}
+	ag := agent.Agent{Model: "m"}
+	msgs := r.buildMessagesWithAttachments(ag, "prompt", []string{"/nonexistent/file.txt"})
+
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+
+	// Check that error message was appended to prompt
+	content := getTextContent(msgs[0])
+	if !strings.Contains(content, "Error reading /nonexistent/file.txt") {
+		t.Errorf("expected error message in prompt, got %q", content)
+	}
 }

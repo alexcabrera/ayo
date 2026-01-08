@@ -15,6 +15,7 @@ import (
 
 	"ayo/internal/builtin"
 	"ayo/internal/config"
+	"ayo/internal/paths"
 	"ayo/internal/skills"
 )
 
@@ -66,14 +67,28 @@ func ListHandles(cfg config.Config) ([]string, error) {
 		handleSet[h] = struct{}{}
 	}
 
-	// Add user agents (directory names include @ prefix)
-	entries, err := os.ReadDir(cfg.AgentsDir)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, err
+	// Scan all agent directories in priority order (local, user config, user data)
+	for _, dir := range paths.AgentsDirs() {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() && strings.HasPrefix(entry.Name(), "@") {
+				handleSet[entry.Name()] = struct{}{}
+			}
+		}
 	}
-	for _, entry := range entries {
-		if entry.IsDir() && strings.HasPrefix(entry.Name(), "@") {
-			handleSet[entry.Name()] = struct{}{}
+
+	// Also check cfg.AgentsDir (may be custom location)
+	if cfg.AgentsDir != "" {
+		entries, err := os.ReadDir(cfg.AgentsDir)
+		if err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() && strings.HasPrefix(entry.Name(), "@") {
+					handleSet[entry.Name()] = struct{}{}
+				}
+			}
 		}
 	}
 
@@ -89,24 +104,60 @@ func ListHandles(cfg config.Config) ([]string, error) {
 func Load(cfg config.Config, handle string) (Agent, error) {
 	normalized := NormalizeHandle(handle)
 
-	// Try user agent first
-	agent, err := loadFromDir(cfg, normalized, cfg.AgentsDir, false)
-	if err == nil {
-		return agent, nil
+	// Build directory list in priority order:
+	// 1. ./.config/ayo/agents (local project)
+	// 2. ./.local/share/ayo/agents (local project data)
+	// 3. cfg.AgentsDir (user config, typically ~/.config/ayo/agents)
+	// 4. ~/.local/share/ayo/agents (user data / built-in)
+	dirs := paths.AgentsDirs()
+
+	// Add cfg.AgentsDir if not already included
+	cfgAgentsDirIncluded := false
+	for _, d := range dirs {
+		if d == cfg.AgentsDir {
+			cfgAgentsDirIncluded = true
+			break
+		}
+	}
+	if !cfgAgentsDirIncluded && cfg.AgentsDir != "" {
+		// Insert cfg.AgentsDir before builtin dir
+		builtinDir := builtin.InstallDir()
+		var newDirs []string
+		inserted := false
+		for _, d := range dirs {
+			if d == builtinDir && !inserted {
+				newDirs = append(newDirs, cfg.AgentsDir)
+				inserted = true
+			}
+			newDirs = append(newDirs, d)
+		}
+		if !inserted {
+			newDirs = append(newDirs, cfg.AgentsDir)
+		}
+		dirs = newDirs
 	}
 
-	// If not found, try installed built-in agent
-	if errors.Is(err, os.ErrNotExist) || strings.Contains(err.Error(), "no such file") {
-		if builtin.HasAgent(normalized) {
-			// Ensure built-in agents are installed
-			if installErr := builtin.Install(); installErr != nil {
-				return Agent{}, fmt.Errorf("install built-in agents: %w", installErr)
-			}
-			return loadFromDir(cfg, normalized, builtin.InstallDir(), true)
+	// Try each directory
+	for _, dir := range dirs {
+		isBuiltIn := dir == builtin.InstallDir()
+		agent, err := loadFromDir(cfg, normalized, dir, isBuiltIn)
+		if err == nil {
+			return agent, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) && !strings.Contains(err.Error(), "no such file") {
+			return Agent{}, err
 		}
 	}
 
-	return Agent{}, err
+	// If not found in any directory, check if it's a built-in that needs installing
+	if builtin.HasAgent(normalized) {
+		if installErr := builtin.Install(); installErr != nil {
+			return Agent{}, fmt.Errorf("install built-in agents: %w", installErr)
+		}
+		return loadFromDir(cfg, normalized, builtin.InstallDir(), true)
+	}
+
+	return Agent{}, fmt.Errorf("agent not found: %s", normalized)
 }
 
 func loadFromDir(cfg config.Config, normalized string, baseDir string, isBuiltIn bool) (Agent, error) {
@@ -162,8 +213,7 @@ func loadFromDir(cfg config.Config, normalized string, baseDir string, isBuiltIn
 	agentSkillsDir := filepath.Join(dir, "skills")
 	discovery := skills.DiscoverForAgent(
 		agentSkillsDir,
-		cfg.SkillsDir,
-		builtin.SkillsInstallDir(),
+		paths.SkillsDirs(),
 		skills.DiscoveryFilterConfig{
 			IncludeSkills: agentConfig.Skills,
 			ExcludeSkills: agentConfig.ExcludeSkills,

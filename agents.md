@@ -5,6 +5,15 @@
 **CRITICAL: Do not modify anything under ./tmp (vendored, read-only). Explore only.**
 **CRITICAL: Do not modify anything under ./.ayo (local dev config, read-only). This is the project-local built-in data directory used during development.**
 
+## Documentation Guidelines
+
+**CRITICAL: All command examples in documentation (README.md, AGENTS.md, etc.) must work if copy/pasted.**
+- Use real agent handles and skill names that exist (e.g., `@ayo`, `@ayo.example.chain.code-reviewer`, `debugging`)
+- For commands that create new entities (like `ayo init @myagent`), placeholders are acceptable since they will create the entity
+- Directory structure diagrams showing hypothetical user content are acceptable (e.g., `@myagent/` to show where user agents go)
+- Never use placeholder names like `@agent`, `@myagent`, `@source-agent` in commands that query or operate on existing entities
+- Always test example commands before committing documentation changes
+
 ## Preferred Libraries (./tmp)
 
 The `./tmp` directory contains vendored source code from Charm and related libraries. These are **read-only reference implementations** for illustrative purposes only.
@@ -244,12 +253,12 @@ ayo setup --force           # Overwrite modifications without prompting
 # Chat
 ayo                         # Start interactive chat with default @ayo agent
 ayo "tell me a joke"        # Run single prompt with default @ayo agent
-ayo @name                   # Start interactive chat session with agent
-ayo @name "tell me a joke"  # Run single prompt (non-interactive)
+ayo @ayo                   # Start interactive chat session with agent
+ayo @ayo "tell me a joke"  # Run single prompt (non-interactive)
 
 # Agents management
 ayo agents list             # List available agents
-ayo agents show <handle>    # Show agent details
+ayo agents show @ayo      # Show agent details
 ayo agents create <handle>  # Create new agent
 ayo agents dir              # Go to agents directory (interactive picker)
 ayo agents update           # Update built-in agents
@@ -474,6 +483,32 @@ internal/builtin/agents/{name}/
 
 The `ayo` namespace is reserved - users cannot create agents with the `@ayo` handle or `@ayo.` prefix.
 
+## Versioning
+
+Ayo uses semantic versioning (semver). The CLI version is defined in `internal/version/version.go`.
+
+### Bumping the Version
+
+When releasing a new version:
+
+1. Update the `Version` constant in `internal/version/version.go`
+2. Follow semver conventions:
+   - **MAJOR** (1.0.0): Breaking changes
+   - **MINOR** (0.2.0): New features, backward compatible
+   - **PATCH** (0.1.1): Bug fixes, backward compatible
+
+```go
+// internal/version/version.go
+const Version = "0.2.0"  // Example: bumping minor version
+```
+
+### Checking the Version
+
+```bash
+ayo --version
+# Output: ayo version 0.1.0
+```
+
 ## Agent Chaining
 
 Agents can be composed via Unix pipes when they have structured input/output schemas. The output of one agent becomes the input to the next.
@@ -497,8 +532,8 @@ Example agent structure:
 ### Piping Agents
 
 ```bash
-# Chain two agents
-ayo @agent-1 '{"input": "data"}' | ayo @agent-2
+# Chain two agents (code reviewer -> issue reporter)
+ayo @ayo.example.chain.code-reviewer '{"repo":".", "files":["main.go"]}' | ayo @ayo.example.chain.issue-reporter
 ```
 
 **Pipeline behavior:**
@@ -523,20 +558,20 @@ If schemas are incompatible, validation fails with a clear error.
 ayo chain ls
 
 # Show agent's schemas
-ayo chain inspect @agent
+ayo chain inspect @ayo.debug.structured-io
 
 # Find agents that can receive this agent's output
-ayo chain from @source-agent
+ayo chain from @ayo.example.chain.code-reviewer
 
 # Find agents whose output this agent can receive
-ayo chain to @target-agent
+ayo chain to @ayo.example.chain.issue-reporter
 
 # Validate JSON against agent's input schema
-ayo chain validate @agent '{"test": "data"}'
-echo '{"test": "data"}' | ayo chain validate @agent
+ayo chain validate @ayo.debug.structured-io '{"environment": "staging", "service": "api"}'
+echo '{"environment": "staging", "service": "api"}' | ayo chain validate @ayo.debug.structured-io
 
 # Generate example input for an agent
-ayo chain example @agent
+ayo chain example @ayo.debug.structured-io
 ```
 
 ### Chain Context

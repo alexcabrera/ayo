@@ -167,7 +167,7 @@ func TestDiscoverForAgent(t *testing.T) {
 	mustWriteSkill(t, filepath.Join(agentDir, "agent-skill"), "agent-skill", "agent")
 	mustWriteSkill(t, filepath.Join(userDir, "user-skill"), "user-skill", "user")
 
-	result := DiscoverForAgent(agentDir, userDir, "", DiscoveryFilterConfig{})
+	result := DiscoverForAgent(agentDir, []string{userDir}, DiscoveryFilterConfig{})
 
 	if len(result.Skills) != 2 {
 		t.Fatalf("expected 2 skills, got %d", len(result.Skills))

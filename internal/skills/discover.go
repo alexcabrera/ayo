@@ -8,7 +8,11 @@ import (
 type DiscoveryOptions struct {
 	// AgentSkillsDir is the agent-specific skills directory (highest priority).
 	AgentSkillsDir string
+	// SharedDirs are additional shared skills directories (in priority order).
+	// These are scanned after agent-specific but before built-in.
+	SharedDirs []string
 	// UserSharedDir is the user's shared skills directory (~/.config/ayo/skills).
+	// Deprecated: Use SharedDirs for multiple directories.
 	UserSharedDir string
 	// BuiltinDir is the directory for installed built-in skills (~/.local/share/ayo/skills).
 	BuiltinDir string
@@ -25,7 +29,7 @@ type DiscoveryOptions struct {
 
 // DiscoverAll scans all configured directories for skills in priority order.
 // Earlier sources take priority over later sources with the same skill name.
-// Priority: agent-specific > user shared > built-in
+// Priority: agent-specific > shared dirs (in order) > user shared > built-in
 // Skills are filtered by include/exclude lists and ignore flags.
 func DiscoverAll(opts DiscoveryOptions) DiscoveryResult {
 	// Build source list in priority order
@@ -40,7 +44,20 @@ func DiscoverAll(opts DiscoveryOptions) DiscoveryResult {
 		})
 	}
 
-	// 2. User shared skills (~/.config/ayo/skills)
+	// 2. Additional shared directories (in priority order)
+	if !opts.IgnoreShared {
+		for _, dir := range opts.SharedDirs {
+			if dir != "" {
+				sources = append(sources, SkillSourceDir{
+					Path:   dir,
+					Source: SourceUserShared,
+					Label:  "shared",
+				})
+			}
+		}
+	}
+
+	// 3. User shared skills (~/.config/ayo/skills) - legacy single dir support
 	if opts.UserSharedDir != "" && !opts.IgnoreShared {
 		sources = append(sources, SkillSourceDir{
 			Path:   opts.UserSharedDir,
@@ -49,7 +66,7 @@ func DiscoverAll(opts DiscoveryOptions) DiscoveryResult {
 		})
 	}
 
-	// 3. Built-in skills (~/.local/share/ayo/skills) - lowest priority
+	// 4. Built-in skills (~/.local/share/ayo/skills) - lowest priority
 	if opts.BuiltinDir != "" && !opts.IgnoreBuiltin {
 		sources = append(sources, SkillSourceDir{
 			Path:   opts.BuiltinDir,
@@ -104,11 +121,11 @@ func filterSkills(skills []Metadata, include, exclude []string) []Metadata {
 
 // DiscoverForAgent is a convenience function that discovers skills for an agent
 // using the standard directory structure.
-func DiscoverForAgent(agentDir, userSharedDir, builtinDir string, cfg DiscoveryFilterConfig) DiscoveryResult {
+// skillsDirs is a list of shared skill directories in priority order.
+func DiscoverForAgent(agentDir string, skillsDirs []string, cfg DiscoveryFilterConfig) DiscoveryResult {
 	return DiscoverAll(DiscoveryOptions{
 		AgentSkillsDir: agentDir,
-		UserSharedDir:  userSharedDir,
-		BuiltinDir:     builtinDir,
+		SharedDirs:     skillsDirs,
 		IncludeSkills:  cfg.IncludeSkills,
 		ExcludeSkills:  cfg.ExcludeSkills,
 		IgnoreBuiltin:  cfg.IgnoreBuiltin,
