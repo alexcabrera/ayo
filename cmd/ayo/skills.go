@@ -1,0 +1,474 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/spf13/cobra"
+
+	"ayo/internal/builtin"
+	"ayo/internal/config"
+	"ayo/internal/paths"
+	"ayo/internal/skills"
+)
+
+func newSkillsCmd(cfgPath *string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "skills",
+		Short:   "Manage skills",
+		Aliases: []string{"skill"},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Default to list
+			return listSkillsCmd(cfgPath).RunE(cmd, args)
+		},
+	}
+
+	cmd.AddCommand(listSkillsCmd(cfgPath))
+	cmd.AddCommand(showSkillCmd(cfgPath))
+	cmd.AddCommand(validateSkillCmd())
+	cmd.AddCommand(createSkillCmd(cfgPath))
+	cmd.AddCommand(dirSkillCmd())
+	cmd.AddCommand(updateSkillsCmd(cfgPath))
+
+	return cmd
+}
+
+func listSkillsCmd(cfgPath *string) *cobra.Command {
+	var sourceFilter string
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all available skills",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withConfig(cfgPath, func(cfg config.Config) error {
+				// Install builtins if needed
+				if err := builtin.Install(); err != nil {
+					return fmt.Errorf("install builtins: %w", err)
+				}
+
+				// Discover all skills
+				result := skills.DiscoverAll(skills.DiscoveryOptions{
+					SharedDirs: paths.SkillsDirs(),
+				})
+
+				// Filter by source if specified
+				if sourceFilter != "" {
+					var filtered []skills.Metadata
+					for _, s := range result.Skills {
+						if s.Source.String() == sourceFilter {
+							filtered = append(filtered, s)
+						}
+					}
+					result.Skills = filtered
+				}
+
+				if len(result.Skills) == 0 {
+					fmt.Println("No skills found.")
+					return nil
+				}
+
+				// Styles
+				headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99"))
+				skillStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
+				sourceStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+				descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+
+				fmt.Println(headerStyle.Render("Available Skills"))
+				fmt.Println(strings.Repeat("─", 60))
+
+				for _, s := range result.Skills {
+					// Skill name and source
+					name := skillStyle.Render("📚 " + s.Name)
+					source := sourceStyle.Render(fmt.Sprintf("[%s]", s.Source.String()))
+					fmt.Printf("%-45s %s\n", name, source)
+
+					// Description (truncated)
+					desc := s.Description
+					if len(desc) > 55 {
+						desc = desc[:52] + "..."
+					}
+					fmt.Printf("   %s\n", descStyle.Render(desc))
+				}
+
+				fmt.Println(strings.Repeat("─", 60))
+				fmt.Printf("%d skills available\n", len(result.Skills))
+
+				return nil
+			})
+		},
+	}
+
+	cmd.Flags().StringVar(&sourceFilter, "source", "", "filter by source (agent, user, installed, built-in)")
+
+	return cmd
+}
+
+func showSkillCmd(cfgPath *string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "show <name>",
+		Short: "Show skill details",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+
+			return withConfig(cfgPath, func(cfg config.Config) error {
+				// Install builtins if needed
+				if err := builtin.Install(); err != nil {
+					return fmt.Errorf("install builtins: %w", err)
+				}
+
+				// Discover all skills
+				result := skills.DiscoverAll(skills.DiscoveryOptions{
+					SharedDirs: paths.SkillsDirs(),
+				})
+
+				// Find the skill
+				var meta *skills.Metadata
+				for i := range result.Skills {
+					if result.Skills[i].Name == name {
+						meta = &result.Skills[i]
+						break
+					}
+				}
+
+				if meta == nil {
+					return fmt.Errorf("skill not found: %s", name)
+				}
+
+				// Load full skill
+				skill, err := skills.Load(*meta)
+				if err != nil {
+					return fmt.Errorf("load skill: %w", err)
+				}
+
+				// Styles
+				headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99"))
+				labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+				valueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+
+				// Build output
+				fmt.Println()
+				fmt.Println(headerStyle.Render("📚 " + skill.Metadata.Name))
+				fmt.Println(strings.Repeat("─", 60))
+
+				fmt.Printf("%s %s\n", labelStyle.Render("Source:"), valueStyle.Render(skill.Metadata.Source.String()))
+
+				if v := skill.Metadata.Version(); v != "" {
+					fmt.Printf("%s %s\n", labelStyle.Render("Version:"), valueStyle.Render(v))
+				}
+				if a := skill.Metadata.Author(); a != "" {
+					fmt.Printf("%s %s\n", labelStyle.Render("Author:"), valueStyle.Render(a))
+				}
+				if skill.Metadata.License != "" {
+					fmt.Printf("%s %s\n", labelStyle.Render("License:"), valueStyle.Render(skill.Metadata.License))
+				}
+				if skill.Metadata.Compatibility != "" {
+					fmt.Printf("%s %s\n", labelStyle.Render("Compatibility:"), valueStyle.Render(skill.Metadata.Compatibility))
+				}
+
+				fmt.Println(strings.Repeat("─", 60))
+
+				// Description (wrapped)
+				fmt.Println(valueStyle.Render(skill.Metadata.Description))
+
+				fmt.Println(strings.Repeat("─", 60))
+
+				fmt.Printf("%s %s\n", labelStyle.Render("Location:"), valueStyle.Render(skill.Metadata.Path))
+
+				// Optional directories
+				var extras []string
+				if skill.Metadata.HasScripts {
+					extras = append(extras, "scripts/")
+				}
+				if skill.Metadata.HasRefs {
+					extras = append(extras, "references/")
+				}
+				if skill.Metadata.HasAssets {
+					extras = append(extras, "assets/")
+				}
+				if len(extras) > 0 {
+					fmt.Printf("%s %s\n", labelStyle.Render("Includes:"), valueStyle.Render(strings.Join(extras, ", ")))
+				}
+
+				fmt.Println()
+
+				return nil
+			})
+		},
+	}
+
+	return cmd
+}
+
+func validateSkillCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "validate <path>",
+		Short: "Validate a skill directory",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			skillDir := args[0]
+
+			// Make path absolute
+			if !filepath.IsAbs(skillDir) {
+				cwd, err := os.Getwd()
+				if err != nil {
+					return err
+				}
+				skillDir = filepath.Join(cwd, skillDir)
+			}
+
+			errors := skills.Validate(skillDir)
+
+			if len(errors) == 0 {
+				successStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+				fmt.Println(successStyle.Render("✓ Skill is valid"))
+				return nil
+			}
+
+			errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+			fmt.Println(errorStyle.Render("✗ Validation errors:"))
+			for _, e := range errors {
+				fmt.Printf("  • %s\n", e.Error())
+			}
+
+			return fmt.Errorf("validation failed with %d errors", len(errors))
+		},
+	}
+
+	return cmd
+}
+
+func createSkillCmd(cfgPath *string) *cobra.Command {
+	var shared bool
+
+	cmd := &cobra.Command{
+		Use:   "create <name>",
+		Short: "Create a new skill from template",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+
+			// Validate name format
+			if errors := validateSkillName(name); len(errors) > 0 {
+				return fmt.Errorf("invalid skill name: %s", errors[0])
+			}
+
+			return withConfig(cfgPath, func(cfg config.Config) error {
+				var skillDir string
+				if shared {
+					skillDir = filepath.Join(cfg.SkillsDir, name)
+				} else {
+					// Use current directory
+					cwd, err := os.Getwd()
+					if err != nil {
+						return err
+					}
+					skillDir = filepath.Join(cwd, name)
+				}
+
+				// Check if already exists
+				if _, err := os.Stat(skillDir); err == nil {
+					return fmt.Errorf("skill directory already exists: %s", skillDir)
+				}
+
+				// Create directory
+				if err := os.MkdirAll(skillDir, 0o755); err != nil {
+					return err
+				}
+
+				// Write template SKILL.md
+				template := fmt.Sprintf(`---
+name: %s
+description: Brief description of what this skill does and when to use it.
+license: MIT
+metadata:
+  author: your-name
+  version: "1.0"
+---
+
+# %s
+
+## When to Use
+
+Describe the scenarios when this skill should be activated.
+
+## Instructions
+
+Step-by-step instructions for the agent to follow.
+
+## Examples
+
+Show example interactions.
+`, name, strings.ReplaceAll(name, "-", " "))
+
+				skillMD := filepath.Join(skillDir, "SKILL.md")
+				if err := os.WriteFile(skillMD, []byte(template), 0o644); err != nil {
+					return err
+				}
+
+				successStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+				fmt.Println(successStyle.Render("✓ Created skill: " + name))
+				fmt.Printf("  Location: %s\n", skillDir)
+				fmt.Println("  Edit SKILL.md to customize your skill.")
+
+				return nil
+			})
+		},
+	}
+
+	cmd.Flags().BoolVar(&shared, "shared", false, "create in shared skills directory")
+
+	return cmd
+}
+
+func dirSkillCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:    "dir",
+		Short:  "Go to skills directory (requires shell integration)",
+		Long:   "Opens an interactive picker to choose between user and built-in skill directories.\nRequires shell integration: run `ayo setup` first.",
+		Hidden: false,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// This is the fallback when shell integration is not set up
+			fmt.Println("This command requires shell integration.")
+			fmt.Println()
+			fmt.Println("Run `ayo setup` to configure shell integration.")
+			fmt.Println()
+			fmt.Println("Skill directories:")
+			fmt.Printf("  User:     %s\n", paths.SkillsDir())
+			fmt.Printf("  Built-in: %s\n", builtin.SkillsInstallDir())
+			return nil
+		},
+	}
+
+	// Hidden subcommand for shell integration
+	cmd.AddCommand(&cobra.Command{
+		Use:    "pick",
+		Hidden: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Output choices for gum to pick
+			fmt.Println("user")
+			fmt.Println("built-in")
+			return nil
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:    "path",
+		Hidden: true,
+		Args:   cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			switch args[0] {
+			case "built-in":
+				fmt.Print(builtin.SkillsInstallDir())
+			case "user":
+				fmt.Print(paths.SkillsDir())
+			default:
+				return fmt.Errorf("unknown choice: %s", args[0])
+			}
+			return nil
+		},
+	})
+
+	return cmd
+}
+
+func updateSkillsCmd(cfgPath *string) *cobra.Command {
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "update",
+		Short: "Update built-in skills to latest version",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withConfig(cfgPath, func(cfg config.Config) error {
+				sui := newSetupUI(cmd.OutOrStdout())
+
+				if !force {
+					// Check for modified skills
+					modified, err := builtin.CheckModifiedSkills()
+					if err != nil {
+						return fmt.Errorf("check modified skills: %w", err)
+					}
+
+					if len(modified) > 0 {
+						sui.Warning("The following skills have local modifications:")
+						for _, m := range modified {
+							sui.Info(fmt.Sprintf("  %s: %v", m.Name, m.ModifiedFiles))
+						}
+						sui.Blank()
+						sui.Info("Use --force to overwrite, or copy modifications to user directory first:")
+						sui.Info(fmt.Sprintf("  %s", cfg.SkillsDir))
+						return fmt.Errorf("skills have local modifications")
+					}
+				}
+
+				sui.Step("Updating built-in skills...")
+				_, err := builtin.ForceInstall()
+				if err != nil {
+					return err
+				}
+				sui.SuccessPath("Updated skills at", builtin.SkillsInstallDir())
+				return nil
+			})
+		},
+	}
+
+	cmd.Flags().BoolVar(&force, "force", false, "overwrite without checking for modifications")
+
+	return cmd
+}
+
+func validateSkillName(name string) []string {
+	var errors []string
+
+	if name == "" {
+		return []string{"name is required"}
+	}
+
+	if len(name) > 64 {
+		errors = append(errors, "name exceeds 64 characters")
+	}
+
+	if name != strings.ToLower(name) {
+		errors = append(errors, "name must be lowercase")
+	}
+
+	if strings.HasPrefix(name, "-") || strings.HasSuffix(name, "-") {
+		errors = append(errors, "name cannot start or end with a hyphen")
+	}
+
+	if strings.Contains(name, "--") {
+		errors = append(errors, "name cannot contain consecutive hyphens")
+	}
+
+	for _, c := range name {
+		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+			errors = append(errors, "name can only contain lowercase letters, numbers, and hyphens")
+			break
+		}
+	}
+
+	return errors
+}
+
+// Helper to get all available skill names for completion
+func getAvailableSkillNames(cfg config.Config) []string {
+	// Install builtins first
+	_ = builtin.Install()
+
+	result := skills.DiscoverAll(skills.DiscoveryOptions{
+		UserSharedDir: cfg.SkillsDir,
+		BuiltinDir:    builtin.SkillsInstallDir(),
+	})
+
+	names := make([]string, len(result.Skills))
+	for i, s := range result.Skills {
+		names[i] = s.Name
+	}
+	sort.Strings(names)
+	return names
+}

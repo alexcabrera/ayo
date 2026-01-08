@@ -27,10 +27,13 @@ A command-line tool for running AI agents with tool execution, skills, and agent
 go install ./cmd/ayo
 ```
 
-After installation, run the setup command to install built-in agents, skills, and configure shell integration:
+Built-in agents and skills are automatically installed on first run. No manual setup required.
+
+To reinstall built-ins (e.g., after modifying them) or set up shell integration:
 
 ```bash
-ayo setup
+ayo setup              # Reinstall built-ins and configure shell integration
+ayo setup --force      # Overwrite modifications without prompting
 ```
 
 For project-local installation (useful for development or project-specific agents):
@@ -46,9 +49,6 @@ This installs to `./.local/share/ayo` and `./.config/ayo` in your current direct
 ## Quick Start
 
 ```bash
-# Complete setup (run once after installation)
-ayo setup
-
 # Start interactive chat with the default @ayo agent
 ayo
 
@@ -118,10 +118,15 @@ ayo -a src/main.go -a src/utils.go "review this code"
 
 ### setup
 
-Complete ayo setup: installs built-in agents and skills, creates user directories, and configures shell integration.
+Reinstall built-in agents and skills, create user directories, and configure shell integration.
+
+Built-ins are automatically installed on first run, so this command is only needed to:
+- Reinstall after modifying built-in agents/skills
+- Set up shell integration for completions and helper functions
+- Install to a project-local directory with `--dev`
 
 ```bash
-ayo setup              # Standard setup to ~/.config/ayo and ~/.local/share/ayo
+ayo setup              # Reinstall built-ins and configure shell integration
 ayo setup --dev        # Project-local setup to ./.config/ayo and ./.local/share/ayo
 ayo setup --force      # Overwrite modifications without prompting
 ```

@@ -168,7 +168,7 @@ Ayo uses two directories:
 
 **Unix (macOS, Linux):**
 - User config: `~/.config/ayo/` (config.yaml, user agents, user skills, prompts)
-- Built-in data: `~/.local/share/ayo/` (agents and skills installed via `ayo setup`)
+- Built-in data: `~/.local/share/ayo/` (agents and skills auto-installed on first run)
 
 **Dev mode:** When running from a source checkout (`go run ./cmd/ayo`), built-in data is stored in `{repo}/.ayo/` instead. User config remains at `~/.config/ayo/`.
 
@@ -205,7 +205,7 @@ provider: {}
     ├── system.md
     └── suffix.md
 
-~/.local/share/ayo/               # Built-in data (managed by ayo setup)
+~/.local/share/ayo/               # Built-in data (auto-installed on first run)
 ├── agents/                       # Built-in agents
 │   └── @ayo/
 │       ├── config.json
@@ -246,8 +246,8 @@ This allows multiple dev branches to have isolated built-ins while sharing user-
 ## Usage
 
 ```bash
-# Setup
-ayo setup                   # Install built-in agents/skills, create user dirs, shell integration
+# Setup (optional - built-ins auto-install on first run)
+ayo setup                   # Reinstall built-ins, create user dirs, shell integration
 ayo setup --force           # Overwrite modifications without prompting
 
 # Chat
