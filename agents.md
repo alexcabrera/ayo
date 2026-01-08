@@ -4,6 +4,7 @@
 **CRITICAL: Maintain TODO.md checklist at repo root. Add new tasks before work, check them off when done, and keep it up to date.**
 **CRITICAL: Do not modify anything under ./tmp (vendored, read-only). Explore only.**
 **CRITICAL: Do not modify anything under ./.ayo (local dev config, read-only). This is the project-local built-in data directory used during development.**
+**CRITICAL: Always use `./install.sh` to build the application. This script automatically installs to `.local/bin/` unless on a clean `main` branch in sync with origin. If you cannot use the script, you MUST set `GOBIN=$(pwd)/.local/bin` manually. NEVER install to the standard GOBIN location unless on an unmodified `main` branch that is in sync with `origin/main`.**
 
 ## Documentation Guidelines
 
