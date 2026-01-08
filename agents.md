@@ -144,9 +144,8 @@ The `./tmp` directory contains vendored source code from Charm and related libra
    - Keep iterating until all tests pass
    - Never report completion while tests are failing
 
-2. **Rebuild the binary**: `go build -o ayo ./cmd/ayo`
+2. **Rebuild the binary**: `go install ./cmd/ayo`
    - This ensures the `ayo` command reflects all changes
-   - The symlink at `/usr/local/bin/ayo` points to this binary
 
 A task is NOT complete until both steps pass successfully.
 
