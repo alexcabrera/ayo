@@ -146,7 +146,6 @@ func newRootCmd() *cobra.Command {
 
 	// Subcommands
 	cmd.AddCommand(newSetupCmd(&cfgPath))
-	cmd.AddCommand(newInitCmd(&cfgPath))
 	cmd.AddCommand(newInitShellCmd())
 	cmd.AddCommand(newAgentsCmd(&cfgPath))
 	cmd.AddCommand(newSkillsCmd(&cfgPath))

@@ -9,7 +9,6 @@ A command-line tool for running AI agents with tool execution, skills, and agent
 - [Running Agents](#running-agents)
 - [Commands](#commands)
   - [setup](#setup)
-  - [init](#init)
   - [init-shell](#init-shell)
   - [agents](#agents)
   - [skills](#skills)
@@ -138,27 +137,6 @@ ayo setup --force      # Overwrite modifications without prompting
 
 ---
 
-### init
-
-Create a new agent interactively or with flags.
-
-```bash
-ayo init @myagent
-ayo init --handle myagent --description "My custom agent"
-ayo init @helper --model gpt-4.1 --system "You are a helpful assistant"
-```
-
-| Flag | Description |
-|------|-------------|
-| `--handle` | Agent handle (without @) |
-| `--description` | Agent description |
-| `--model` | Model id (e.g., gpt-4.1, claude-3-opus) |
-| `--system` | System message text (overrides file) |
-| `--system-file` | Path to system message file |
-| `--ignore-shared` | Ignore shared system message |
-
----
-
 ### init-shell
 
 Output shell initialization script for completions and helper functions.
@@ -208,17 +186,21 @@ ayo agents show @ayo
 
 #### agents create
 
-Create a new agent in the user agents directory.
+Create a new agent interactively or with flags.
 
 ```bash
-ayo agents create <handle> [--flags]
+ayo agents create @myagent
+ayo agents create @myagent --description "My custom agent"
+ayo agents create @helper --model gpt-4.1 --system "You are a helpful assistant"
 ```
 
 | Flag | Description |
 |------|-------------|
 | `--description` | Agent description |
 | `--model` | Model to use |
-| `--system` | System message |
+| `--system` | System message text |
+| `--system-file` | Path to system message file |
+| `--ignore-shared` | Ignore shared system message |
 
 #### agents dir
 

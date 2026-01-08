@@ -9,7 +9,7 @@
 
 **CRITICAL: All command examples in documentation (README.md, AGENTS.md, etc.) must work if copy/pasted.**
 - Use real agent handles and skill names that exist (e.g., `@ayo`, `@ayo.example.chain.code-reviewer`, `debugging`)
-- For commands that create new entities (like `ayo init @myagent`), placeholders are acceptable since they will create the entity
+- For commands that create new entities (like `ayo agents create @myagent`), placeholders are acceptable since they will create the entity
 - Directory structure diagrams showing hypothetical user content are acceptable (e.g., `@myagent/` to show where user agents go)
 - Never use placeholder names like `@agent`, `@myagent`, `@source-agent` in commands that query or operate on existing entities
 - Always test example commands before committing documentation changes

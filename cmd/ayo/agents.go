@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
@@ -14,6 +16,7 @@ import (
 	"ayo/internal/builtin"
 	"ayo/internal/config"
 	"ayo/internal/paths"
+	"ayo/internal/ui"
 )
 
 func newAgentsCmd(cfgPath *string) *cobra.Command {
@@ -123,19 +126,53 @@ func listAgentsCmd(cfgPath *string) *cobra.Command {
 
 func createAgentCmd(cfgPath *string) *cobra.Command {
 	var (
-		model       string
-		description string
-		system      string
+		model        string
+		description  string
+		system       string
+		systemFile   string
+		ignoreShared bool
 	)
 
 	cmd := &cobra.Command{
-		Use:   "create <handle>",
+		Use:   "create [@handle]",
 		Short: "Create a new agent",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			handle := agent.NormalizeHandle(args[0])
+			var handle string
+			if len(args) > 0 {
+				handle = agent.NormalizeHandle(args[0])
+			}
 
 			return withConfig(cfgPath, func(cfg config.Config) error {
+				providerModels := config.ConfiguredModels(cfg)
+				modelIDs := make([]string, 0, len(providerModels))
+				modelSet := make(map[string]struct{}, len(providerModels))
+				for _, m := range providerModels {
+					modelIDs = append(modelIDs, m.ID)
+					modelSet[m.ID] = struct{}{}
+				}
+
+				// Interactive form if required fields missing
+				if handle == "" || model == "" || (system == "" && systemFile == "") {
+					ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Minute)
+					defer cancel()
+
+					form := ui.NewInitForm()
+					res, err := form.Run(ctx, modelIDs)
+					if err != nil {
+						return err
+					}
+					handle = res.Handle
+					model = res.Model
+					description = res.Description
+					ignoreShared = res.IgnoreShared
+					system = res.System
+				}
+
+				if handle == "" {
+					return fmt.Errorf("handle is required")
+				}
+
 				// Check reserved namespace
 				if agent.IsReservedNamespace(handle) {
 					return fmt.Errorf("cannot use reserved handle %s", handle)
@@ -145,6 +182,15 @@ func createAgentCmd(cfgPath *string) *cobra.Command {
 				agentDir := filepath.Join(cfg.AgentsDir, handle)
 				if _, err := os.Stat(agentDir); err == nil {
 					return fmt.Errorf("agent already exists: %s", handle)
+				}
+
+				// Load system from file if specified
+				if system == "" && systemFile != "" {
+					data, err := os.ReadFile(systemFile)
+					if err != nil {
+						return err
+					}
+					system = string(data)
 				}
 
 				// Default system message
@@ -157,9 +203,17 @@ func createAgentCmd(cfgPath *string) *cobra.Command {
 					model = cfg.DefaultModel
 				}
 
+				// Validate model if we have a configured set
+				if len(modelSet) > 0 {
+					if _, ok := modelSet[model]; !ok {
+						return fmt.Errorf("model %s is not configured", model)
+					}
+				}
+
 				agCfg := agent.Config{
-					Model:       model,
-					Description: description,
+					Model:                     model,
+					Description:               description,
+					IgnoreSharedSystemMessage: ignoreShared,
 				}
 
 				ag, err := agent.Save(cfg, handle, agCfg, system)
@@ -179,7 +233,9 @@ func createAgentCmd(cfgPath *string) *cobra.Command {
 
 	cmd.Flags().StringVar(&model, "model", "", "model to use")
 	cmd.Flags().StringVar(&description, "description", "", "agent description")
-	cmd.Flags().StringVar(&system, "system", "", "system message")
+	cmd.Flags().StringVar(&system, "system", "", "system message text")
+	cmd.Flags().StringVar(&systemFile, "system-file", "", "path to system message file")
+	cmd.Flags().BoolVar(&ignoreShared, "ignore-shared", false, "ignore shared system message")
 
 	return cmd
 }
