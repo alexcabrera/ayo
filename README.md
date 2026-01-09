@@ -9,11 +9,9 @@ A command-line tool for running AI agents with tool execution, skills, and agent
 - [Running Agents](#running-agents)
 - [Commands](#commands)
   - [setup](#setup)
-  - [init-shell](#init-shell)
   - [agents](#agents)
   - [skills](#skills)
   - [chain](#chain)
-  - [completion](#completion)
 - [Configuration](#configuration)
 - [Directory Structure](#directory-structure)
 - [Agent Chaining](#agent-chaining)
@@ -28,10 +26,10 @@ go install ./cmd/ayo
 
 Built-in agents and skills are automatically installed on first run. No manual setup required.
 
-To reinstall built-ins (e.g., after modifying them) or set up shell integration:
+To reinstall built-ins (e.g., after modifying them):
 
 ```bash
-ayo setup              # Reinstall built-ins and configure shell integration
+ayo setup              # Reinstall built-ins
 ayo setup --force      # Overwrite modifications without prompting
 ```
 
@@ -117,15 +115,14 @@ ayo -a src/main.go -a src/utils.go "review this code"
 
 ### setup
 
-Reinstall built-in agents and skills, create user directories, and configure shell integration.
+Reinstall built-in agents and skills and create user directories.
 
 Built-ins are automatically installed on first run, so this command is only needed to:
 - Reinstall after modifying built-in agents/skills
-- Set up shell integration for completions and helper functions
 - Install to a project-local directory with `--dev`
 
 ```bash
-ayo setup              # Reinstall built-ins and configure shell integration
+ayo setup              # Reinstall built-ins
 ayo setup --dev        # Project-local setup to ./.config/ayo and ./.local/share/ayo
 ayo setup --force      # Overwrite modifications without prompting
 ```
@@ -134,21 +131,6 @@ ayo setup --force      # Overwrite modifications without prompting
 |------|-------|-------------|
 | `--dev` | | Install to local project directories instead of global |
 | `--force` | `-f` | Overwrite modifications without prompting |
-
----
-
-### init-shell
-
-Output shell initialization script for completions and helper functions.
-
-```bash
-# Add to your .bashrc or .zshrc
-eval "$(ayo init-shell)"
-```
-
-This enables:
-- Shell completions for commands and agent handles
-- Helper functions for `ayo agents dir` and `ayo skills dir` (interactive directory selection with [gum](https://github.com/charmbracelet/gum))
 
 ---
 
@@ -161,7 +143,7 @@ ayo agents list                    # List all available agents
 ayo agents list --source=user      # Filter by source (user, built-in)
 ayo agents show @ayo               # Show agent details
 ayo agents create myagent          # Create a new agent
-ayo agents dir                     # Go to agents directory (requires shell integration)
+ayo agents dir                     # Show agents directories
 ayo agents update                  # Update built-in agents
 ayo agents update --force          # Overwrite without checking for modifications
 ```
@@ -204,9 +186,7 @@ ayo agents create @helper --model gpt-4.1 --system "You are a helpful assistant"
 
 #### agents dir
 
-Navigate to an agents directory. Requires shell integration (`eval "$(ayo init-shell)"`).
-
-With [gum](https://github.com/charmbracelet/gum) installed, provides interactive selection between user and built-in directories.
+Show paths to user and built-in agent directories.
 
 #### agents update
 
@@ -280,7 +260,7 @@ ayo skills validate ~/.config/ayo/skills/debugging
 
 #### skills dir
 
-Navigate to a skills directory. Requires shell integration.
+Show paths to user and built-in skill directories.
 
 #### skills update
 
@@ -360,55 +340,6 @@ Generate example input JSON based on an agent's input schema.
 
 ```bash
 ayo chain example @ayo.debug.structured-io
-```
-
----
-
-### completion
-
-Generate shell autocompletion scripts.
-
-#### Bash
-
-```bash
-# Current session
-source <(ayo completion bash)
-
-# Linux (persistent)
-ayo completion bash > /etc/bash_completion.d/ayo
-
-# macOS with Homebrew (persistent)
-ayo completion bash > $(brew --prefix)/etc/bash_completion.d/ayo
-```
-
-#### Zsh
-
-```bash
-# Current session
-source <(ayo completion zsh)
-
-# Linux (persistent)
-ayo completion zsh > "${fpath[1]}/_ayo"
-
-# macOS with Homebrew (persistent)
-ayo completion zsh > $(brew --prefix)/share/zsh/site-functions/_ayo
-```
-
-#### Fish
-
-```bash
-# Current session
-ayo completion fish | source
-
-# Persistent
-ayo completion fish > ~/.config/fish/completions/ayo.fish
-```
-
-#### PowerShell
-
-```powershell
-# Current session
-ayo completion powershell | Out-String | Invoke-Expression
 ```
 
 ---

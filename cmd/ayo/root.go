@@ -31,28 +31,6 @@ func newRootCmd() *cobra.Command {
 			// Auto-install built-in agents and skills if needed (version-based)
 			return builtin.Install()
 		},
-		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			// Only complete first arg (agent handle)
-			if len(args) > 0 {
-				return nil, cobra.ShellCompDirectiveNoFileComp
-			}
-			cfg, err := loadConfig(cfgPath)
-			if err != nil {
-				return nil, cobra.ShellCompDirectiveNoFileComp
-			}
-			handles, err := agent.ListHandles(cfg)
-			if err != nil {
-				return nil, cobra.ShellCompDirectiveNoFileComp
-			}
-			// Filter by prefix if user has typed something
-			var matches []string
-			for _, h := range handles {
-				if strings.HasPrefix(h, toComplete) {
-					matches = append(matches, h)
-				}
-			}
-			return matches, cobra.ShellCompDirectiveNoFileComp
-		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withConfig(&cfgPath, func(cfg config.Config) error {
 				if len(args) == 0 {
@@ -146,7 +124,6 @@ func newRootCmd() *cobra.Command {
 
 	// Subcommands
 	cmd.AddCommand(newSetupCmd(&cfgPath))
-	cmd.AddCommand(newInitShellCmd())
 	cmd.AddCommand(newAgentsCmd(&cfgPath))
 	cmd.AddCommand(newSkillsCmd(&cfgPath))
 	cmd.AddCommand(newChainCmd(&cfgPath))

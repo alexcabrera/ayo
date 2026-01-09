@@ -181,7 +181,7 @@ func DefaultStyles() Styles {
 
 		StatusError: lipgloss.NewStyle().
 			Foreground(colorError).
-			SetString("✕"),
+			SetString("✗"),
 
 		// Borders
 		BorderActive: lipgloss.RoundedBorder(),
@@ -280,7 +280,7 @@ func GlamourStyleConfig() ansi.StyleConfig {
 			Format: "\n────────────────────────────────\n",
 		},
 		Item: ansi.StylePrimitive{
-			BlockPrefix: "• ",
+			BlockPrefix: "- ",
 		},
 		Enumeration: ansi.StylePrimitive{
 			BlockPrefix: ". ",
@@ -288,7 +288,7 @@ func GlamourStyleConfig() ansi.StyleConfig {
 		},
 		Task: ansi.StyleTask{
 			StylePrimitive: ansi.StylePrimitive{},
-			Ticked:         "[✓] ",
+			Ticked:         "[x] ",
 			Unticked:       "[ ] ",
 		},
 		Link: ansi.StylePrimitive{
@@ -304,7 +304,7 @@ func GlamourStyleConfig() ansi.StyleConfig {
 		},
 		ImageText: ansi.StylePrimitive{
 			Color:  strPtr("#a78bfa"),
-			Format: "Image: {{.text}} →",
+			Format: "Image: {{.text}}",
 		},
 		Code: ansi.StyleBlock{
 			StylePrimitive: ansi.StylePrimitive{
@@ -417,7 +417,7 @@ func GlamourStyleConfig() ansi.StyleConfig {
 			RowSeparator:    strPtr("─"),
 		},
 		DefinitionDescription: ansi.StylePrimitive{
-			BlockPrefix: "\n→ ",
+			BlockPrefix: "\n> ",
 		},
 	}
 }
@@ -437,22 +437,28 @@ func NewMarkdownRenderer() (*glamour.TermRenderer, error) {
 	)
 }
 
-// Icons for various UI elements.
+// Icons for various UI elements - colorizable Unicode glyphs (no emojis).
+// These are carefully selected from box drawing, geometric shapes, and
+// miscellaneous symbols to be visually distinct and terminal-compatible.
 const (
-	IconThinking   = "◆"
-	IconTool       = "⚙"
-	IconBash       = "❯"
-	IconSuccess    = "✓"
-	IconError      = "✕"
-	IconWarning    = "⚠"
-	IconInfo       = "ℹ"
-	IconArrowRight = "→"
-	IconBullet     = "•"
-	IconCheck      = "✓"
-	IconCross      = "✕"
-	IconSpinner    = "◐"
-	IconPending    = "○"
-	IconComplete   = "●"
+	IconThinking   = "◇"  // White diamond - thinking/reasoning
+	IconTool       = "▶"  // Black right-pointing triangle - tool execution
+	IconBash       = "❯"  // Heavy right angle bracket - bash/shell prompt
+	IconSuccess    = "✓"  // Check mark - success
+	IconError      = "✗"  // Ballot X - error
+	IconWarning    = "△"  // White up-pointing triangle - warning
+	IconInfo       = "●"  // Black circle - info
+	IconArrowRight = "→"  // Rightwards arrow - navigation
+	IconBullet     = "•"  // Bullet - list items
+	IconCheck      = "✓"  // Check mark - completed
+	IconCross      = "✗"  // Ballot X - failed
+	IconSpinner    = "◐"  // Circle with left half black - in progress
+	IconPending    = "○"  // White circle - pending
+	IconComplete   = "●"  // Black circle - complete
+	IconAgent      = "◆"  // Black diamond - agent
+	IconSubAgent   = "▹"  // White right-pointing small triangle - sub-agent
+	IconEllipsis   = "⋯"  // Midline horizontal ellipsis - loading/truncated
+	IconMenu       = "≡"  // Identical to - menu (hamburger alternative)
 )
 
 // FormatToolLabel formats a tool label with an icon.

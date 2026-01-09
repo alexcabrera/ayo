@@ -2,9 +2,18 @@
 
 **CRITICAL: After every code change, you MUST add/maintain tests and keep them passing. NEVER reply to the user while tests are failing. Never skip tests.**
 **CRITICAL: Maintain TODO.md checklist at repo root. Add new tasks before work, check them off when done, and keep it up to date.**
-**CRITICAL: Do not modify anything under ./tmp (vendored, read-only). Explore only.**
+**CRITICAL: Do not modify anything under ./.read-only (vendored, read-only). Explore only.**
 **CRITICAL: Do not modify anything under ./.ayo (local dev config, read-only). This is the project-local built-in data directory used during development.**
 **CRITICAL: Always use `./install.sh` to build the application. This script automatically installs to `.local/bin/` unless on a clean `main` branch in sync with origin. If you cannot use the script, you MUST set `GOBIN=$(pwd)/.local/bin` manually. NEVER install to the standard GOBIN location unless on an unmodified `main` branch that is in sync with `origin/main`.**
+**CRITICAL: Never use emojis or unicode glyphs that have inherent colors. Only use colorizable unicode characters from these categories:**
+- **Geometric shapes:** `◆ ◇ ● ○ ◐ ◑ ◒ ◓ ◉ ◎ ■ □ ▪ ▫ ▲ △ ▼ ▽ ▶ ▷ ◀ ◁ ▸ ▹`
+- **Box drawing:** `─ │ ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼ ═ ║ ╭ ╮ ╯ ╰`
+- **Arrows:** `→ ← ↑ ↓ ↔ ⇒ ⇐ ➜ ➤`
+- **Dingbats/symbols:** `✓ ✗ ❯ ❮ • ‣ ★ ☆ ⋯ ≡`
+- **Braille (spinners):** `⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏`
+- **Block elements:** `█ ▓ ▒ ░ ▀ ▄ ▌ ▐`
+
+**Never use emojis like:** 🤖 ⚡ 🎯 ✅ ❌ ⚠ ℹ ☰ ⚙ or any character that renders with inherent color. This ensures the UI respects user terminal theme preferences.
 
 ## Documentation Guidelines
 
@@ -15,14 +24,19 @@
 - Never use placeholder names like `@agent`, `@myagent`, `@source-agent` in commands that query or operate on existing entities
 - Always test example commands before committing documentation changes
 
-## Preferred Libraries (./tmp)
+## Preferred Libraries (./.read-only)
 
-The `./tmp` directory contains vendored source code from Charm and related libraries. These are **read-only reference implementations** for illustrative purposes only.
+The `./.read-only` directory contains vendored source code from Charm and related libraries. These are **read-only reference implementations** for illustrative purposes only.
+
+**CRITICAL: These libraries are the REQUIRED stack for this application. Before implementing ANY feature:**
+1. **Consult `./.read-only` first** - explore the source to understand patterns and APIs
+2. **Use these libraries** as the first-line solution for any applicable problem
+3. **Follow the patterns** demonstrated in the reference implementations (crush, glow, soft-serve)
+4. **Never reinvent** functionality that exists in these libraries
 
 **IMPORTANT:**
 - These sources are snapshots and may be outdated - always verify against live documentation when implementing
-- Use these libraries as the **first-line solution** for any applicable problem
-- Do NOT modify files in `./tmp` - explore only
+- Do NOT modify files in `./.read-only` - explore only
 - When in doubt, check the official docs at https://charm.sh/
 
 ### Library Reference
@@ -42,14 +56,27 @@ The `./tmp` directory contains vendored source code from Charm and related libra
 
 ### When to Use Each Library
 
-#### Bubble Tea (`./tmp/bubbletea`)
+#### Bubble Tea (`./.read-only/bubbletea`)
 **Use for:** Full interactive TUI applications with state management
 - Complex multi-screen interfaces
 - Real-time updates and event handling
 - Keyboard/mouse input handling
 - Any app needing Model-View-Update pattern
 
-#### Bubbles (`./tmp/bubbles`)
+**Key patterns:**
+```go
+// Implement tea.Model interface
+type model struct { /* state */ }
+func (m model) Init() tea.Cmd { return nil }
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { /* handle msgs */ }
+func (m model) View() string { return /* render with lipgloss */ }
+
+// Run the program
+p := tea.NewProgram(model{})
+if _, err := p.Run(); err != nil { /* handle */ }
+```
+
+#### Bubbles (`./.read-only/bubbles`)
 **Use for:** Drop-in UI components for Bubble Tea apps
 - `spinner` - Loading indicators
 - `textinput` - Single-line text input
@@ -60,8 +87,23 @@ The `./tmp` directory contains vendored source code from Charm and related libra
 - `paginator` - Paged content navigation
 - `filepicker` - File/directory selection
 - `timer` - Countdown/stopwatch
+- `help` - Keybinding help
+- `key` - Configurable keymaps
 
-#### Lip Gloss (`./tmp/lipgloss`)
+**Key patterns:**
+```go
+// Embed bubble as field, delegate Update/View
+type model struct {
+    spinner spinner.Model
+}
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    var cmd tea.Cmd
+    m.spinner, cmd = m.spinner.Update(msg)
+    return m, cmd
+}
+```
+
+#### Lip Gloss (`./.read-only/lipgloss`)
 **Use for:** Styling terminal output
 - Colors (foreground, background, adaptive)
 - Text formatting (bold, italic, underline)
@@ -71,14 +113,42 @@ The `./tmp` directory contains vendored source code from Charm and related libra
 - `lipgloss/list` - Styled lists
 - `lipgloss/tree` - Tree rendering
 
-#### Glamour (`./tmp/glamour`)
+**Key patterns:**
+```go
+// Styles are immutable, chain methods
+style := lipgloss.NewStyle().
+    Bold(true).
+    Foreground(lipgloss.Color("#FF0")).
+    Padding(1, 2)
+output := style.Render("text")
+
+// Layout
+lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+lipgloss.JoinVertical(lipgloss.Left, top, bottom)
+lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, content)
+```
+
+#### Glamour (`./.read-only/glamour`)
 **Use for:** Rendering Markdown in terminal
 - Displaying README/documentation
 - Help text with formatting
 - Any Markdown content (API responses, notes)
 - Multiple built-in themes (dark, light, dracula, tokyo-night)
 
-#### Huh (`./tmp/huh`)
+**Key patterns:**
+```go
+// Quick render with style
+out, _ := glamour.Render(markdown, "dark")
+
+// Custom renderer
+r, _ := glamour.NewTermRenderer(
+    glamour.WithAutoStyle(),
+    glamour.WithWordWrap(80),
+)
+out, _ := r.Render(markdown)
+```
+
+#### Huh (`./.read-only/huh`)
 **Use for:** Interactive forms and user input collection
 - Multi-field forms with validation
 - Selection menus (single/multi-select)
@@ -87,7 +157,24 @@ The `./tmp` directory contains vendored source code from Charm and related libra
 - File pickers
 - Works standalone or embedded in Bubble Tea
 
-#### Log (`./tmp/log`)
+**Key patterns:**
+```go
+var name string
+form := huh.NewForm(
+    huh.NewGroup(
+        huh.NewInput().
+            Title("Name").
+            Value(&name).
+            Validate(func(s string) error {
+                if s == "" { return errors.New("required") }
+                return nil
+            }),
+    ),
+)
+if err := form.Run(); err != nil { /* handle */ }
+```
+
+#### Log (`./.read-only/log`)
 **Use for:** Application logging
 - Leveled logging (debug, info, warn, error, fatal)
 - Colored, styled output
@@ -95,46 +182,109 @@ The `./tmp` directory contains vendored source code from Charm and related libra
 - JSON/logfmt formatters
 - slog compatibility
 
-#### Harmonica (`./tmp/harmonica`)
-**Use for:** Smooth animations
-- Spring physics for natural motion
-- Animated progress bars
-- Smooth scrolling
-- UI element transitions
+**Key patterns:**
+```go
+log.Info("message", "key", value)
+log.Error("failed", "err", err)
 
-#### Fang (`./tmp/fang`)
+// Custom logger
+logger := log.NewWithOptions(os.Stderr, log.Options{
+    Level: log.DebugLevel,
+    ReportTimestamp: true,
+})
+```
+
+#### Fantasy (`./.read-only/fantasy`)
+**Use for:** Provider-agnostic LLM abstraction
+- Unified API across Anthropic, OpenAI, Google, OpenRouter
+- Streaming responses with callbacks
+- Tool/function calling
+- Agent orchestration with stop conditions
+
+**Key patterns:**
+```go
+// Create provider and model
+provider, _ := openrouter.New(openrouter.WithAPIKey(key))
+model, _ := provider.LanguageModel(ctx, "anthropic/claude-3.5-sonnet")
+
+// Create agent with tools
+agent := fantasy.NewAgent(model,
+    fantasy.WithSystemPrompt("You are helpful."),
+    fantasy.WithTools(myTools...),
+    fantasy.OnTextDelta(func(delta string) { fmt.Print(delta) }),
+)
+
+// Generate with stop condition
+result, _ := agent.Generate(ctx, fantasy.AgentCall{
+    Prompt: "Hello",
+    StopWhen: fantasy.FinishReasonIs(fantasy.FinishReasonEndTurn),
+})
+```
+
+#### Fang (`./.read-only/fang`)
 **Use for:** Enhancing Cobra CLI apps
 - Styled help output
-- Automatic `--version` flag
+- Automatic `--version` flag from build info
 - Manpage generation
-- Shell completion setup
 - Consistent error handling
+
+**Key patterns:**
+```go
+// Replace cmd.Execute() with fang.Execute()
+if err := fang.Execute(ctx, rootCmd); err != nil {
+    os.Exit(1)
+}
+```
+
+### Reference Implementations
+
+#### Crush (`./.read-only/crush`)
+**THE primary reference** for AI CLI implementation patterns:
+- Fantasy agent orchestration
+- Tool execution with callbacks
+- Streaming UI with spinners
+- MCP server integration
+- LSP context integration
+- Session management
+
+#### Soft Serve (`./.read-only/soft-serve`)
+**Reference for:** Complex multi-component TUI
+- Wish SSH server integration
+- Bubble Tea over SSH
+- Git operations
+- Database integration
+
+#### Glow (`./.read-only/glow`)
+**Reference for:** Markdown TUI browser
+- Glamour rendering
+- File browser patterns
+- GitHub/GitLab fetching
+
+#### Gum (`./.read-only/gum`)
+**Reference for:** Exposing Bubbles as CLI commands
+- Flag-based configuration
+- Shell script integration
 
 ### Additional Tools
 
-#### Gum (`./tmp/gum`)
-**Use for:** Shell script interactivity (not Go code)
-- Quick prompts from bash scripts
-- `gum input`, `gum choose`, `gum confirm`, `gum spin`
-- Prototyping before building in Go
-
-#### Glow (`./tmp/glow`)
-**Use for:** Reference for markdown browsing TUI
-- Terminal markdown viewer implementation
-- GitHub/GitLab markdown fetching patterns
-
-#### Sequin (`./tmp/sequin`)
+#### Sequin (`./.read-only/sequin`)
 **Use for:** Debugging terminal output
 - Decoding ANSI escape sequences
 - Inspecting TUI rendering
 - Validating golden test files
 
-#### Crush (`./tmp/crush`)
-**Use for:** Reference AI CLI implementation
-- LLM integration patterns
-- MCP server support
-- LSP context integration
-- Session management
+#### Ultraviolet (`./.read-only/ultraviolet`)
+**Use for:** Low-level terminal rendering (advanced)
+- Cell-based diffing renderer
+- Cross-platform terminal I/O
+- Internal use by Bubble Tea v2
+
+#### x/ Packages (`./.read-only/x`)
+**Experimental utilities:**
+- `x/ansi` - ANSI escape sequence parsing
+- `x/term` - Terminal utilities (size, raw mode)
+- `x/editor` - Open files in text editors
+- `x/exp/golden` - Golden file testing
 
 ## Completion Checklist
 
@@ -247,7 +397,7 @@ This allows multiple dev branches to have isolated built-ins while sharing user-
 
 ```bash
 # Setup (optional - built-ins auto-install on first run)
-ayo setup                   # Reinstall built-ins, create user dirs, shell integration
+ayo setup                   # Reinstall built-ins, create user dirs
 ayo setup --force           # Overwrite modifications without prompting
 
 # Chat
@@ -260,7 +410,7 @@ ayo @ayo "tell me a joke"  # Run single prompt (non-interactive)
 ayo agents list             # List available agents
 ayo agents show @ayo      # Show agent details
 ayo agents create <handle>  # Create new agent
-ayo agents dir              # Go to agents directory (interactive picker)
+ayo agents dir              # Show agents directories
 ayo agents update           # Update built-in agents
 ayo agents update --force   # Update without checking for modifications
 
@@ -269,26 +419,9 @@ ayo skills list             # List available skills
 ayo skills show <name>      # Show skill details
 ayo skills create <name>    # Create new skill
 ayo skills validate <path>  # Validate skill directory
-ayo skills dir              # Go to skills directory (interactive picker)
+ayo skills dir              # Show skills directories
 ayo skills update           # Update built-in skills
-
-# Shell integration
-ayo init-shell              # Output shell integration script
 ```
-
-### Shell Integration
-
-For `ayo agents dir` and `ayo skills dir` to work interactively, add shell integration:
-
-```bash
-# Add to ~/.zshrc or ~/.bashrc:
-eval "$(ayo init-shell)"
-```
-
-This enables:
-- Interactive directory picker using `gum` (if installed)
-- Tab completion for commands and agent handles
-- Shell wrapper for cd-based commands
 
 ### Default Agent
 
@@ -314,7 +447,7 @@ Both interactive and non-interactive modes share the same UI components:
 Spinners display progress during async operations:
 
 - **LLM calls**: "Thinking..." while waiting, then "✓ Response received (elapsed)"
-- **Tool calls**: Shows LLM-provided description (e.g., "Installing dependencies..."), then "✓ Installing dependencies (1.2s)" or "✕ ... failed (elapsed)"
+- **Tool calls**: Shows LLM-provided description (e.g., "Installing dependencies..."), then "✓ Installing dependencies (1.2s)" or "× ... failed (elapsed)"
 
 ### Styled Output
 

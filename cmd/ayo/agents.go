@@ -62,15 +62,28 @@ func listAgentsCmd(cfgPath *string) *cobra.Command {
 					return nil
 				}
 
+				// Color palette
+				purple := lipgloss.Color("#a78bfa")
+				cyan := lipgloss.Color("#67e8f9")
+				muted := lipgloss.Color("#6b7280")
+				text := lipgloss.Color("#e5e7eb")
+				subtle := lipgloss.Color("#374151")
+
 				// Styles
-				headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99"))
-				agentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
-				sourceStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-				descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+				headerStyle := lipgloss.NewStyle().Bold(true).Foreground(purple)
+				iconStyle := lipgloss.NewStyle().Foreground(cyan)
+				handleStyle := lipgloss.NewStyle().Foreground(cyan).Bold(true)
+				sourceStyle := lipgloss.NewStyle().Foreground(muted)
+				descStyle := lipgloss.NewStyle().Foreground(text)
+				countStyle := lipgloss.NewStyle().Foreground(muted)
+				dividerStyle := lipgloss.NewStyle().Foreground(subtle)
 
-				fmt.Println(headerStyle.Render("Available Agents"))
-				fmt.Println(strings.Repeat("─", 60))
+				// Header
+				fmt.Println()
+				fmt.Println(headerStyle.Render("  Agents"))
+				fmt.Println(dividerStyle.Render("  " + strings.Repeat("─", 58)))
 
+				count := 0
 				for _, h := range handles {
 					// Determine source
 					isBuiltin := builtin.HasAgent(h)
@@ -89,6 +102,7 @@ func listAgentsCmd(cfgPath *string) *cobra.Command {
 					if sourceFilter != "" && source != sourceFilter {
 						continue
 					}
+					count++
 
 					// Get description
 					ag, err := agent.Load(cfg, h)
@@ -97,22 +111,32 @@ func listAgentsCmd(cfgPath *string) *cobra.Command {
 						desc = ag.Config.Description
 					}
 
-					// Agent name and source
-					name := agentStyle.Render("🤖 " + h)
-					sourceLabel := sourceStyle.Render(fmt.Sprintf("[%s]", source))
-					fmt.Printf("%-45s %s\n", name, sourceLabel)
+					// Format: ◆ @handle                              [source]
+					icon := iconStyle.Render("◆")
+					handle := handleStyle.Render(h)
+					sourceLabel := sourceStyle.Render(source)
 
-					// Description (truncated)
+					// Calculate padding for alignment
+					handleWidth := lipgloss.Width(h)
+					padding := 50 - handleWidth
+					if padding < 2 {
+						padding = 2
+					}
+
+					fmt.Printf("  %s %s%s%s\n", icon, handle, strings.Repeat(" ", padding), sourceLabel)
+
+					// Description (truncated, indented)
 					if desc != "" {
-						if len(desc) > 55 {
-							desc = desc[:52] + "..."
+						if len(desc) > 52 {
+							desc = desc[:49] + "..."
 						}
-						fmt.Printf("   %s\n", descStyle.Render(desc))
+						fmt.Printf("    %s\n", descStyle.Render(desc))
 					}
 				}
 
-				fmt.Println(strings.Repeat("─", 60))
-				fmt.Printf("%d agents available\n", len(handles))
+				fmt.Println(dividerStyle.Render("  " + strings.Repeat("─", 58)))
+				fmt.Println(countStyle.Render(fmt.Sprintf("  %d agents", count)))
+				fmt.Println()
 
 				return nil
 			})
@@ -259,28 +283,37 @@ func showAgentCmd(cfgPath *string) *cobra.Command {
 					return fmt.Errorf("agent not found: %s", handle)
 				}
 
+				// Color palette
+				purple := lipgloss.Color("#a78bfa")
+				cyan := lipgloss.Color("#67e8f9")
+				muted := lipgloss.Color("#6b7280")
+				text := lipgloss.Color("#e5e7eb")
+				subtle := lipgloss.Color("#374151")
+
 				// Styles
-				headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99"))
-				labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-				valueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+				headerStyle := lipgloss.NewStyle().Bold(true).Foreground(purple)
+				iconStyle := lipgloss.NewStyle().Foreground(cyan)
+				labelStyle := lipgloss.NewStyle().Foreground(muted)
+				valueStyle := lipgloss.NewStyle().Foreground(text)
+				dividerStyle := lipgloss.NewStyle().Foreground(subtle)
 
 				fmt.Println()
-				fmt.Println(headerStyle.Render("🤖 " + ag.Handle))
-				fmt.Println(strings.Repeat("─", 60))
+				fmt.Println("  " + iconStyle.Render("◆") + " " + headerStyle.Render(ag.Handle))
+				fmt.Println(dividerStyle.Render("  " + strings.Repeat("─", 58)))
 
 				source := "user"
 				if ag.BuiltIn {
 					source = "built-in"
 				}
-				fmt.Printf("%s %s\n", labelStyle.Render("Source:"), valueStyle.Render(source))
-				fmt.Printf("%s %s\n", labelStyle.Render("Model:"), valueStyle.Render(ag.Model))
+				fmt.Printf("  %s %s\n", labelStyle.Render("Source:"), valueStyle.Render(source))
+				fmt.Printf("  %s  %s\n", labelStyle.Render("Model:"), valueStyle.Render(ag.Model))
 
 				if ag.Config.Description != "" {
-					fmt.Printf("%s %s\n", labelStyle.Render("Description:"), valueStyle.Render(ag.Config.Description))
+					fmt.Printf("  %s   %s\n", labelStyle.Render("Desc:"), valueStyle.Render(ag.Config.Description))
 				}
 
-				fmt.Println(strings.Repeat("─", 60))
-				fmt.Printf("%s %s\n", labelStyle.Render("Location:"), valueStyle.Render(ag.Dir))
+				fmt.Println(dividerStyle.Render("  " + strings.Repeat("─", 58)))
+				fmt.Printf("  %s   %s\n", labelStyle.Render("Path:"), valueStyle.Render(ag.Dir))
 
 				if len(ag.Skills) > 0 {
 					skillNames := make([]string, len(ag.Skills))
@@ -288,11 +321,11 @@ func showAgentCmd(cfgPath *string) *cobra.Command {
 						skillNames[i] = s.Name
 					}
 					sort.Strings(skillNames)
-					fmt.Printf("%s %s\n", labelStyle.Render("Skills:"), valueStyle.Render(strings.Join(skillNames, ", ")))
+					fmt.Printf("  %s %s\n", labelStyle.Render("Skills:"), valueStyle.Render(strings.Join(skillNames, ", ")))
 				}
 
 				if len(ag.Config.AllowedTools) > 0 {
-					fmt.Printf("%s %s\n", labelStyle.Render("Tools:"), valueStyle.Render(strings.Join(ag.Config.AllowedTools, ", ")))
+					fmt.Printf("  %s  %s\n", labelStyle.Render("Tools:"), valueStyle.Render(strings.Join(ag.Config.AllowedTools, ", ")))
 				}
 
 				fmt.Println()
@@ -308,51 +341,17 @@ func showAgentCmd(cfgPath *string) *cobra.Command {
 func dirAgentCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "dir",
-		Short:  "Go to agents directory (requires shell integration)",
-		Long:   "Opens an interactive picker to choose between user and built-in agent directories.\nRequires shell integration: run `ayo setup` first.",
+		Short:  "Show agents directories",
+		Long:   "Shows paths to user and built-in agent directories.",
 		Hidden: false,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// This is the fallback when shell integration is not set up
-			fmt.Println("This command requires shell integration.")
-			fmt.Println()
-			fmt.Println("Run `ayo setup` to configure shell integration.")
-			fmt.Println()
 			fmt.Println("Agent directories:")
 			fmt.Printf("  User:     %s\n", paths.AgentsDir())
 			fmt.Printf("  Built-in: %s\n", builtin.InstallDir())
 			return nil
 		},
 	}
-
-	// Hidden subcommand for shell integration
-	cmd.AddCommand(&cobra.Command{
-		Use:    "pick",
-		Hidden: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// Output choices for gum to pick
-			fmt.Println("user")
-			fmt.Println("built-in")
-			return nil
-		},
-	})
-
-	cmd.AddCommand(&cobra.Command{
-		Use:    "path",
-		Hidden: true,
-		Args:   cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			switch args[0] {
-			case "built-in":
-				fmt.Print(builtin.InstallDir())
-			case "user":
-				fmt.Print(paths.AgentsDir())
-			default:
-				return fmt.Errorf("unknown choice: %s", args[0])
-			}
-			return nil
-		},
-	})
 
 	return cmd
 }

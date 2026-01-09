@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -22,8 +20,8 @@ func newSetupCmd(cfgPath *string) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "setup",
-		Short: "Complete ayo setup (agents, skills, shell integration)",
-		Long:  "Runs complete ayo setup: installs built-in agents and skills, creates user directories, and configures shell integration.",
+		Short: "Complete ayo setup (agents, skills)",
+		Long:  "Runs complete ayo setup: installs built-in agents and skills, creates user directories.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Enable local dev mode before any paths are accessed
@@ -144,19 +142,6 @@ func newSetupCmd(cfgPath *string) *cobra.Command {
 				}
 				sui.Blank()
 
-				// 3. Shell integration
-				sui.Step("Shell integration:")
-				if rcFile, hasLine := checkShellIntegration(); hasLine {
-					sui.SuccessPath("Already configured in", rcFile)
-				} else {
-					sui.Info("Add this line to your shell rc file:")
-					sui.Blank()
-					sui.Code("eval \"$(ayo init-shell)\"")
-					sui.Blank()
-					sui.Info("Then restart your shell or run: source ~/.zshrc")
-				}
-				sui.Blank()
-
 				// 4. Summary
 				sui.Header("Directory structure:")
 				if paths.IsLocalDevMode() {
@@ -194,101 +179,6 @@ func newSetupCmd(cfgPath *string) *cobra.Command {
 	cmd.Flags().BoolVar(&devMode, "dev", false, "install to ./.local/share/ayo and ./.config/ayo instead of default locations")
 
 	return cmd
-}
-
-func newInitShellCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "init-shell",
-		Short: "Output shell initialization script",
-		Long:  "Outputs a shell script that sets up ayo completions and helper functions.\nAdd to your .bashrc or .zshrc: eval \"$(ayo init-shell)\"",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprint(cmd.OutOrStdout(), initShellScript)
-			return nil
-		},
-	}
-}
-
-const initShellScript = `
-# ayo shell integration
-# Add to your .bashrc or .zshrc: eval "$(ayo init-shell)"
-
-# Check if gum is available for interactive selection
-__ayo_has_gum() {
-  command -v gum &> /dev/null
-}
-
-# Wrapper function to handle shell-specific commands
-ayo() {
-  case "$1 $2" in
-    "agents dir")
-      if __ayo_has_gum; then
-        local choice=$(echo -e "user\nbuilt-in" | gum choose --header "Select agents directory:")
-        if [[ -n "$choice" ]]; then
-          cd "$(command ayo agents dir path "$choice")"
-        fi
-      else
-        echo "Install gum for interactive selection: https://github.com/charmbracelet/gum"
-        echo ""
-        command ayo agents dir
-      fi
-      ;;
-    "skills dir")
-      if __ayo_has_gum; then
-        local choice=$(echo -e "user\nbuilt-in" | gum choose --header "Select skills directory:")
-        if [[ -n "$choice" ]]; then
-          cd "$(command ayo skills dir path "$choice")"
-        fi
-      else
-        echo "Install gum for interactive selection: https://github.com/charmbracelet/gum"
-        echo ""
-        command ayo skills dir
-      fi
-      ;;
-    *)
-      command ayo "$@"
-      ;;
-  esac
-}
-
-# Shell completions
-if [[ -n "$ZSH_VERSION" ]]; then
-  # Zsh completions - only init if not already done by a framework
-  if ! (( $+functions[compdef] )); then
-    autoload -Uz compinit && compinit -C
-  fi
-  source <(command ayo completion zsh)
-elif [[ -n "$BASH_VERSION" ]]; then
-  # Bash completions
-  source <(command ayo completion bash)
-fi
-`
-
-// checkShellIntegration checks if ayo init-shell is already in the user's shell rc file
-func checkShellIntegration() (rcFile string, found bool) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", false
-	}
-
-	// Check common rc files
-	rcFiles := []string{
-		filepath.Join(home, ".zshrc"),
-		filepath.Join(home, ".bashrc"),
-		filepath.Join(home, ".bash_profile"),
-	}
-
-	for _, rc := range rcFiles {
-		data, err := os.ReadFile(rc)
-		if err != nil {
-			continue
-		}
-		if strings.Contains(string(data), "ayo init-shell") {
-			return rc, true
-		}
-	}
-
-	return "", false
 }
 
 // setupUI provides styled output for setup commands

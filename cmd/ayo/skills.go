@@ -328,51 +328,17 @@ Show example interactions.
 func dirSkillCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "dir",
-		Short:  "Go to skills directory (requires shell integration)",
-		Long:   "Opens an interactive picker to choose between user and built-in skill directories.\nRequires shell integration: run `ayo setup` first.",
+		Short:  "Show skills directories",
+		Long:   "Shows paths to user and built-in skill directories.",
 		Hidden: false,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// This is the fallback when shell integration is not set up
-			fmt.Println("This command requires shell integration.")
-			fmt.Println()
-			fmt.Println("Run `ayo setup` to configure shell integration.")
-			fmt.Println()
 			fmt.Println("Skill directories:")
 			fmt.Printf("  User:     %s\n", paths.SkillsDir())
 			fmt.Printf("  Built-in: %s\n", builtin.SkillsInstallDir())
 			return nil
 		},
 	}
-
-	// Hidden subcommand for shell integration
-	cmd.AddCommand(&cobra.Command{
-		Use:    "pick",
-		Hidden: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// Output choices for gum to pick
-			fmt.Println("user")
-			fmt.Println("built-in")
-			return nil
-		},
-	})
-
-	cmd.AddCommand(&cobra.Command{
-		Use:    "path",
-		Hidden: true,
-		Args:   cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			switch args[0] {
-			case "built-in":
-				fmt.Print(builtin.SkillsInstallDir())
-			case "user":
-				fmt.Print(paths.SkillsDir())
-			default:
-				return fmt.Errorf("unknown choice: %s", args[0])
-			}
-			return nil
-		},
-	})
 
 	return cmd
 }

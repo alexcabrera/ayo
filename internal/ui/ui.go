@@ -706,7 +706,7 @@ func (u *UI) PrintSubAgentStart(agentHandle, prompt string) {
 
 	u.printf("%s%s %s %s\n",
 		indent,
-		iconStyle.Render("⚡"),
+		iconStyle.Render(IconSubAgent),
 		handleStyle.Render(agentHandle),
 		labelStyle.Render("sub-agent"))
 
