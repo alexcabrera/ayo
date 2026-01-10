@@ -319,6 +319,13 @@ func IsReservedNamespace(handle string) bool {
 }
 
 func Save(cfg config.Config, handle string, cfgData Config, systemMessage string) (Agent, error) {
+	return SaveWithSchemas(cfg, handle, cfgData, systemMessage, "", "")
+}
+
+// SaveWithSchemas creates a new agent with optional input/output schema files.
+// If inputSchemaFile or outputSchemaFile are provided, their contents are copied
+// into the agent directory as input.jsonschema and output.jsonschema respectively.
+func SaveWithSchemas(cfg config.Config, handle string, cfgData Config, systemMessage string, inputSchemaFile, outputSchemaFile string) (Agent, error) {
 	normalized := NormalizeHandle(handle)
 
 	// Prevent users from creating agents in reserved namespaces
@@ -352,7 +359,52 @@ func Save(cfg config.Config, handle string, cfgData Config, systemMessage string
 		return Agent{}, fmt.Errorf("write agent config: %w", err)
 	}
 
+	// Copy input schema if provided
+	if inputSchemaFile != "" {
+		if err := copySchemaFile(inputSchemaFile, agentDir, "input.jsonschema"); err != nil {
+			return Agent{}, fmt.Errorf("copy input schema: %w", err)
+		}
+	}
+
+	// Copy output schema if provided
+	if outputSchemaFile != "" {
+		if err := copySchemaFile(outputSchemaFile, agentDir, "output.jsonschema"); err != nil {
+			return Agent{}, fmt.Errorf("copy output schema: %w", err)
+		}
+	}
+
 	return Load(cfg, normalized)
+}
+
+// copySchemaFile reads a JSON schema from srcPath and writes it to destName in agentDir.
+// It validates that the file contains valid JSON before copying.
+func copySchemaFile(srcPath, agentDir, destName string) error {
+	// Expand ~ to home directory
+	if strings.HasPrefix(srcPath, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		srcPath = strings.Replace(srcPath, "~", home, 1)
+	}
+
+	data, err := os.ReadFile(srcPath)
+	if err != nil {
+		return fmt.Errorf("read schema file: %w", err)
+	}
+
+	// Validate JSON
+	var js json.RawMessage
+	if err := json.Unmarshal(data, &js); err != nil {
+		return fmt.Errorf("invalid JSON in schema file: %w", err)
+	}
+
+	destPath := filepath.Join(agentDir, destName)
+	if err := os.WriteFile(destPath, data, 0o644); err != nil {
+		return fmt.Errorf("write schema file: %w", err)
+	}
+
+	return nil
 }
 
 func loadAgentConfig(dir string) (Config, error) {

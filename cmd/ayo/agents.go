@@ -16,6 +16,7 @@ import (
 	"ayo/internal/builtin"
 	"ayo/internal/config"
 	"ayo/internal/paths"
+	"ayo/internal/skills"
 	"ayo/internal/ui"
 )
 
@@ -150,17 +151,54 @@ func listAgentsCmd(cfgPath *string) *cobra.Command {
 
 func createAgentCmd(cfgPath *string) *cobra.Command {
 	var (
-		model        string
-		description  string
-		system       string
-		systemFile   string
-		ignoreShared bool
+		// Core
+		model       string
+		description string
+		system      string
+		systemFile  string
+
+		// Tools
+		tools []string
+
+		// Skills
+		skills_             []string
+		excludeSkills       []string
+		ignoreBuiltinSkills bool
+		ignoreSharedSkills  bool
+		ignoreSharedSystem  bool
+
+		// Chaining
+		inputSchema  string
+		outputSchema string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "create [@handle]",
 		Short: "Create a new agent",
-		Args:  cobra.MaximumNArgs(1),
+		Long: `Create a new agent with the specified configuration.
+
+If required flags are not provided, an interactive wizard will guide you through
+the creation process. For non-interactive use, provide all required flags.
+
+Examples:
+  # Interactive mode
+  ayo agents create @myagent
+
+  # Full CLI creation
+  ayo agents create @code-helper \
+    --model gpt-4.1 \
+    --description "Helps write clean code" \
+    --system "You are an expert programmer..." \
+    --tools bash,agent_call \
+    --skills debugging
+
+  # Using external files
+  ayo agents create @reviewer \
+    --model claude-3.5-sonnet \
+    --system-file ~/prompts/reviewer.md \
+    --input-schema ~/schemas/input.json \
+    --output-schema ~/schemas/output.json`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var handle string
 			if len(args) > 0 {
@@ -176,21 +214,45 @@ func createAgentCmd(cfgPath *string) *cobra.Command {
 					modelSet[m.ID] = struct{}{}
 				}
 
-				// Interactive form if required fields missing
-				if handle == "" || model == "" || (system == "" && systemFile == "") {
-					ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Minute)
+				// Determine if we need interactive mode
+				needsInteractive := handle == "" || model == "" || (system == "" && systemFile == "")
+
+				if needsInteractive {
+					ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Minute)
 					defer cancel()
 
-					form := ui.NewInitForm()
-					res, err := form.Run(ctx, modelIDs)
+					// Discover available skills for the form
+					discoveredSkills := skills.DiscoverAll(skills.DiscoveryOptions{
+						SharedDirs: paths.SkillsDirs(),
+					})
+
+					// Available tools
+					availableTools := []string{"bash", "agent_call"}
+
+					form := ui.NewAgentCreateForm(ui.AgentCreateFormOptions{
+						Models:          modelIDs,
+						AvailableSkills: discoveredSkills.Skills,
+						AvailableTools:  availableTools,
+						PrefilledHandle: handle,
+					})
+
+					res, err := form.Run(ctx)
 					if err != nil {
 						return err
 					}
+
+					// Transfer results from form
 					handle = res.Handle
 					model = res.Model
 					description = res.Description
-					ignoreShared = res.IgnoreShared
-					system = res.System
+					tools = res.AllowedTools
+					skills_ = res.Skills
+					ignoreBuiltinSkills = res.IgnoreBuiltinSkills
+					ignoreSharedSkills = res.IgnoreSharedSkills
+					ignoreSharedSystem = res.IgnoreSharedSystem
+					system = res.SystemMessage
+					inputSchema = res.InputSchemaFile
+					outputSchema = res.OutputSchemaFile
 				}
 
 				if handle == "" {
@@ -210,9 +272,10 @@ func createAgentCmd(cfgPath *string) *cobra.Command {
 
 				// Load system from file if specified
 				if system == "" && systemFile != "" {
-					data, err := os.ReadFile(systemFile)
+					expanded := expandPath(systemFile)
+					data, err := os.ReadFile(expanded)
 					if err != nil {
-						return err
+						return fmt.Errorf("read system file: %w", err)
 					}
 					system = string(data)
 				}
@@ -234,13 +297,23 @@ func createAgentCmd(cfgPath *string) *cobra.Command {
 					}
 				}
 
+				// Default tools
+				if len(tools) == 0 {
+					tools = []string{"bash"}
+				}
+
 				agCfg := agent.Config{
 					Model:                     model,
 					Description:               description,
-					IgnoreSharedSystemMessage: ignoreShared,
+					AllowedTools:              tools,
+					Skills:                    skills_,
+					ExcludeSkills:             excludeSkills,
+					IgnoreBuiltinSkills:       ignoreBuiltinSkills,
+					IgnoreSharedSkills:        ignoreSharedSkills,
+					IgnoreSharedSystemMessage: ignoreSharedSystem,
 				}
 
-				ag, err := agent.Save(cfg, handle, agCfg, system)
+				ag, err := agent.SaveWithSchemas(cfg, handle, agCfg, system, inputSchema, outputSchema)
 				if err != nil {
 					return err
 				}
@@ -248,20 +321,60 @@ func createAgentCmd(cfgPath *string) *cobra.Command {
 				successStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 				fmt.Println(successStyle.Render("✓ Created agent: " + ag.Handle))
 				fmt.Printf("  Location: %s\n", ag.Dir)
-				fmt.Println("  Edit system.md to customize your agent.")
+
+				// Show what was configured
+				if len(ag.Config.AllowedTools) > 0 {
+					fmt.Printf("  Tools: %s\n", strings.Join(ag.Config.AllowedTools, ", "))
+				}
+				if len(ag.Skills) > 0 {
+					skillNames := make([]string, len(ag.Skills))
+					for i, s := range ag.Skills {
+						skillNames[i] = s.Name
+					}
+					fmt.Printf("  Skills: %s\n", strings.Join(skillNames, ", "))
+				}
+				if ag.HasInputSchema() || ag.HasOutputSchema() {
+					fmt.Println("  Chaining: enabled")
+				}
 
 				return nil
 			})
 		},
 	}
 
-	cmd.Flags().StringVar(&model, "model", "", "model to use")
-	cmd.Flags().StringVar(&description, "description", "", "agent description")
-	cmd.Flags().StringVar(&system, "system", "", "system message text")
-	cmd.Flags().StringVar(&systemFile, "system-file", "", "path to system message file")
-	cmd.Flags().BoolVar(&ignoreShared, "ignore-shared", false, "ignore shared system message")
+	// Core flags
+	cmd.Flags().StringVarP(&model, "model", "m", "", "model to use")
+	cmd.Flags().StringVarP(&description, "description", "d", "", "agent description")
+	cmd.Flags().StringVarP(&system, "system", "s", "", "system message text")
+	cmd.Flags().StringVarP(&systemFile, "system-file", "f", "", "path to system message markdown file")
+
+	// Tool flags
+	cmd.Flags().StringSliceVarP(&tools, "tools", "t", nil, "allowed tools (comma-separated or repeated)")
+
+	// Skill flags
+	cmd.Flags().StringSliceVar(&skills_, "skills", nil, "skills to include (comma-separated or repeated)")
+	cmd.Flags().StringSliceVar(&excludeSkills, "exclude-skills", nil, "skills to exclude")
+	cmd.Flags().BoolVar(&ignoreBuiltinSkills, "ignore-builtin-skills", false, "ignore built-in skills")
+	cmd.Flags().BoolVar(&ignoreSharedSkills, "ignore-shared-skills", false, "ignore shared skills")
+	cmd.Flags().BoolVar(&ignoreSharedSystem, "ignore-shared-system", false, "ignore shared system message")
+
+	// Schema flags
+	cmd.Flags().StringVar(&inputSchema, "input-schema", "", "path to input JSON schema file (for chaining)")
+	cmd.Flags().StringVar(&outputSchema, "output-schema", "", "path to output JSON schema file (for chaining)")
 
 	return cmd
+}
+
+// expandPath expands ~ to the user's home directory.
+func expandPath(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return path
+		}
+		return strings.Replace(path, "~", home, 1)
+	}
+	return path
 }
 
 func showAgentCmd(cfgPath *string) *cobra.Command {
