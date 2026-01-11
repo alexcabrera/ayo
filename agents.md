@@ -1,9 +1,7 @@
 # ayo CLI
 
 **CRITICAL: After every code change, you MUST add/maintain tests and keep them passing. NEVER reply to the user while tests are failing. Never skip tests.**
-**CRITICAL: Maintain TODO.md checklist at repo root. Add new tasks before work, check them off when done, and keep it up to date.**
 **CRITICAL: Do not modify anything under ./.read-only (vendored, read-only). Explore only.**
-**CRITICAL: Do not modify anything under ./.ayo (local dev config, read-only). This is the project-local built-in data directory used during development.**
 **CRITICAL: Always use `./install.sh` to build the application. This script automatically installs to `.local/bin/` unless on a clean `main` branch in sync with origin. If you cannot use the script, you MUST set `GOBIN=$(pwd)/.local/bin` manually. NEVER install to the standard GOBIN location unless on an unmodified `main` branch that is in sync with `origin/main`.**
 **CRITICAL: Never use emojis or unicode glyphs that have inherent colors. Only use colorizable unicode characters from these categories:**
 - **Geometric shapes:** `◆ ◇ ● ○ ◐ ◑ ◒ ◓ ◉ ◎ ■ □ ▪ ▫ ▲ △ ▼ ▽ ▶ ▷ ◀ ◁ ▸ ▹`
@@ -77,18 +75,75 @@ if _, err := p.Run(); err != nil { /* handle */ }
 ```
 
 #### Bubbles (`./.read-only/bubbles`)
-**Use for:** Drop-in UI components for Bubble Tea apps
-- `spinner` - Loading indicators
-- `textinput` - Single-line text input
-- `textarea` - Multi-line text editing
-- `table` - Data tables
-- `list` - Scrollable lists with filtering
-- `viewport` - Scrollable content panes
-- `paginator` - Paged content navigation
-- `filepicker` - File/directory selection
-- `timer` - Countdown/stopwatch
-- `help` - Keybinding help
-- `key` - Configurable keymaps
+**Use for:** Low-level TUI components when huh doesn't fit or for custom UIs
+
+**IMPORTANT: For forms/wizards, prefer huh. Use bubbles for:**
+- Custom scrollable content (viewport)
+- Loading indicators in non-form contexts (spinner)
+- Complex data display (table, list)
+- Specialized inputs not covered by huh
+
+**Component Reference:**
+
+| Component | File | When to Use |
+|-----------|------|-------------|
+| `viewport` | `viewport/viewport.go` | Scrollable content (logs, docs, previews) |
+| `spinner` | `spinner/spinner.go` | Loading indicators in custom UIs |
+| `textinput` | `textinput/textinput.go` | Single-line input (prefer huh.NewInput for forms) |
+| `textarea` | `textarea/textarea.go` | Multi-line editor (prefer huh.NewText for forms) |
+| `table` | `table/table.go` | Tabular data with selection |
+| `list` | `list/list.go` | Rich filterable lists (prefer huh.NewSelect for forms) |
+| `filepicker` | `filepicker/filepicker.go` | File browser (prefer huh.NewFilePicker for forms) |
+| `paginator` | `paginator/paginator.go` | Pagination state ("1/5" or dots) |
+| `progress` | `progress/progress.go` | Animated progress bars |
+| `timer` | `timer/timer.go` | Countdown timers |
+| `stopwatch` | `stopwatch/stopwatch.go` | Elapsed time |
+| `help` | `help/help.go` | Keybinding help display |
+| `key` | `key/key.go` | Keybinding definitions |
+
+**Viewport (scrollable content):**
+```go
+vp := viewport.New(width, height)
+vp.SetContent(longText)  // Auto-splits by newlines
+
+// In Update:
+vp, cmd = vp.Update(msg)
+
+// Key methods:
+vp.ScrollDown(n), vp.ScrollUp(n)
+vp.PageDown(), vp.PageUp()
+vp.GotoTop(), vp.GotoBottom()
+vp.AtTop(), vp.AtBottom()
+vp.ScrollPercent()  // 0.0-1.0
+```
+
+**Spinner pattern:**
+```go
+s := spinner.New(spinner.WithSpinner(spinner.Dot))
+
+// MUST return Tick in Init
+func (m model) Init() tea.Cmd { return m.spinner.Tick }
+
+// Handle TickMsg in Update
+case spinner.TickMsg:
+    m.spinner, cmd = m.spinner.Update(msg)
+```
+
+**Table:**
+```go
+t := table.New(
+    table.WithColumns([]table.Column{
+        {Title: "Name", Width: 20},
+        {Title: "Value", Width: 10},
+    }),
+    table.WithRows([]table.Row{
+        {"Item A", "100"},
+        {"Item B", "200"},
+    }),
+    table.WithFocused(true),
+)
+selected := t.SelectedRow()
+```
 
 **Key patterns:**
 ```go
@@ -149,29 +204,89 @@ out, _ := r.Render(markdown)
 ```
 
 #### Huh (`./.read-only/huh`)
-**Use for:** Interactive forms and user input collection
-- Multi-field forms with validation
-- Selection menus (single/multi-select)
-- Confirmation prompts
-- Text input with placeholders
-- File pickers
-- Works standalone or embedded in Bubble Tea
+**Use for:** Interactive forms and user input collection - THE PREFERRED LIBRARY FOR ALL FORM UIs
 
-**Key patterns:**
+**CRITICAL: Use huh for ALL wizard/form UIs instead of building custom Bubble Tea models.**
+
+**When to use huh vs custom Bubble Tea:**
+- **Use huh**: Forms, wizards, input collection, selection menus, confirmations, file pickers
+- **Use custom Bubble Tea**: Real-time dashboards, games, complex non-linear UIs, streaming content
+
+**Key source files:**
+- `./.read-only/huh/form.go` - Core Form type
+- `./.read-only/huh/group.go` - Group for multi-step wizards  
+- `./.read-only/huh/field_*.go` - All field types
+- `./.read-only/huh/theme.go` - Theming system
+
+**All Available Field Types:**
+
+| Field | Use For | Key Options |
+|-------|---------|-------------|
+| `NewInput()` | Single-line text | `Placeholder`, `Prompt`, `CharLimit`, `EchoMode`, `Suggestions`, `Validate` |
+| `NewText()` | Multi-line text | `Lines`, `CharLimit`, `ShowLineNumbers`, `Editor()`, `EditorExtension` |
+| `NewSelect[T]()` | Single selection | `Options`, `Height`, `Inline`, `Filtering` |
+| `NewMultiSelect[T]()` | Multiple selection | `Options`, `Height`, `Limit`, `Filterable` |
+| `NewConfirm()` | Yes/No prompt | `Affirmative`, `Negative`, `Inline` |
+| `NewNote()` | Display-only text | `Height`, `Next`, `NextLabel` |
+| `NewFilePicker()` | File selection | `CurrentDirectory`, `AllowedTypes`, `ShowHidden`, `DirAllowed` |
+
+**Multi-step wizards with groups:**
 ```go
-var name string
 form := huh.NewForm(
+    // Step 1
     huh.NewGroup(
-        huh.NewInput().
-            Title("Name").
-            Value(&name).
-            Validate(func(s string) error {
-                if s == "" { return errors.New("required") }
-                return nil
-            }),
-    ),
-)
+        huh.NewInput().Title("Name").Value(&name),
+        huh.NewInput().Title("Email").Value(&email),
+    ).Title("Identity"),
+    
+    // Step 2  
+    huh.NewGroup(
+        huh.NewSelect[string]().
+            Title("Plan").
+            Options(huh.NewOptions("Free", "Pro", "Enterprise")...).
+            Value(&plan),
+    ).Title("Subscription"),
+    
+    // Step 3 - Conditional (skip if Free plan)
+    huh.NewGroup(
+        huh.NewInput().Title("Card Number").Value(&card),
+    ).Title("Payment").
+      WithHideFunc(func() bool { return plan == "Free" }),
+).WithTheme(huh.ThemeCharm())
+
 if err := form.Run(); err != nil { /* handle */ }
+```
+
+**Dynamic options based on previous selections:**
+```go
+var country string
+huh.NewSelect[string]().
+    Value(&state).
+    TitleFunc(func() string {
+        if country == "Canada" { return "Province" }
+        return "State"
+    }, &country).
+    OptionsFunc(func() []huh.Option[string] {
+        return getStatesFor(country)
+    }, &country)
+```
+
+**Built-in themes:** `ThemeCharm()`, `ThemeDracula()`, `ThemeCatppuccin()`, `ThemeBase16()`, `ThemeBase()`
+
+**Key examples to study:**
+- `./.read-only/huh/examples/burger/main.go` - Full multi-step wizard
+- `./.read-only/huh/examples/bubbletea/main.go` - Embedding in Bubble Tea
+- `./.read-only/huh/examples/dynamic/` - Dynamic forms
+- `./.read-only/huh/examples/conditional/main.go` - Conditional fields
+- `./.read-only/huh/examples/filepicker/main.go` - File selection
+
+**Spinner for async operations:**
+```go
+import "github.com/charmbracelet/huh/spinner"
+spinner.New().
+    Title("Processing...").
+    Action(func() { doWork() }).
+    Run()
 ```
 
 #### Log (`./.read-only/log`)
@@ -239,13 +354,55 @@ if err := fang.Execute(ctx, rootCmd); err != nil {
 ### Reference Implementations
 
 #### Crush (`./.read-only/crush`)
-**THE primary reference** for AI CLI implementation patterns:
-- Fantasy agent orchestration
-- Tool execution with callbacks
-- Streaming UI with spinners
-- MCP server integration
-- LSP context integration
-- Session management
+**THE primary reference** for AI CLI implementation patterns.
+
+**Key directories to study:**
+- `./.read-only/crush/internal/tui/` - Main TUI architecture
+- `./.read-only/crush/internal/tui/components/dialogs/` - Dialog system
+- `./.read-only/crush/internal/tui/components/chat/splash/` - Onboarding wizard
+- `./.read-only/crush/internal/tui/layout/` - Component interfaces
+
+**Patterns to learn from:**
+
+1. **Page-based navigation with lazy loading:**
+```go
+type appModel struct {
+    currentPage  page.PageID
+    pages        map[page.PageID]util.Model
+    loadedPages  map[page.PageID]bool
+}
+```
+
+2. **Dialog system with message-based open/close:**
+```go
+type OpenDialogMsg struct { Model DialogModel }
+type CloseDialogMsg struct{}
+```
+
+3. **State-based multi-step flows (splash.go):**
+```go
+type splashCmp struct {
+    isOnboarding     bool
+    needsProjectInit bool
+    needsAPIKey      bool
+}
+```
+
+4. **Interface-based components:**
+```go
+type Focusable interface {
+    Focus() tea.Cmd
+    Blur() tea.Cmd
+    IsFocused() bool
+}
+```
+
+5. **Message-driven transitions:**
+```go
+util.CmdHandler(ModelSelectedMsg{Model: selected})
+```
+
+**NOTE:** Crush builds custom form components instead of using huh. For ayo, prefer huh for forms.
 
 #### Soft Serve (`./.read-only/soft-serve`)
 **Reference for:** Complex multi-component TUI
@@ -317,7 +474,7 @@ A Go-based command line tool for managing local AI agents.
 Ayo uses two directories:
 
 **Unix (macOS, Linux):**
-- User config: `~/.config/ayo/` (config.yaml, user agents, user skills, prompts)
+- User config: `~/.config/ayo/` (ayo.json, ayo-schema.json, user agents, user skills, prompts)
 - Built-in data: `~/.local/share/ayo/` (agents and skills auto-installed on first run)
 
 **Dev mode:** When running from a source checkout (`go run ./cmd/ayo`), built-in data is stored in `{repo}/.ayo/` instead. User config remains at `~/.config/ayo/`.
@@ -325,15 +482,17 @@ Ayo uses two directories:
 **Windows:**
 - Both: `%LOCALAPPDATA%\ayo\`
 
-```yaml
-# ~/.config/ayo/config.yaml
-agents_dir: ~/.config/ayo/agents
-skills_dir: ~/.config/ayo/skills
-shared_system_message: ~/.config/ayo/prompts/system.md
-system_prefix: ~/.config/ayo/prompts/prefix.md
-system_suffix: ~/.config/ayo/prompts/suffix.md
-default_model: gpt-4.1
-provider: {}
+```json
+// ~/.config/ayo/ayo.json
+{
+  "$schema": "./ayo-schema.json",
+  "agents_dir": "~/.config/ayo/agents",
+  "skills_dir": "~/.config/ayo/skills",
+  "system_prefix": "~/.config/ayo/prompts/prefix.md",
+  "system_suffix": "~/.config/ayo/prompts/suffix.md",
+  "default_model": "gpt-4.1",
+  "provider": {}
+}
 ```
 
 ## Directory Structure
@@ -341,7 +500,8 @@ provider: {}
 **Production (installed binary):**
 ```
 ~/.config/ayo/                    # User configuration (editable)
-├── config.yaml                   # Main config file
+├── ayo.json                      # Main config file
+├── ayo-schema.json               # JSON schema for config (auto-installed)
 ├── agents/                       # User-defined agents
 │   └── @myagent/
 │       ├── config.json

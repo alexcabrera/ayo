@@ -2,13 +2,22 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"io"
 	"os"
 
 	"github.com/charmbracelet/fang"
 
+	"ayo/internal/builtin"
 	"ayo/internal/version"
 )
+
+//go:embed ayo-config-schema.json
+var configSchema []byte
+
+func init() {
+	builtin.ConfigSchema = configSchema
+}
 
 func main() {
 	ctx := context.Background()

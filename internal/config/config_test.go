@@ -58,3 +58,61 @@ func mustUserHome(t *testing.T) string {
 	}
 	return h
 }
+
+func TestLoadJSONConfig(t *testing.T) {
+	// Create a temp config file
+	tmpFile, err := os.CreateTemp("", "ayo-config-*.json")
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	// Write JSON config
+	configJSON := `{
+		"$schema": "./ayo-schema.json",
+		"default_model": "gpt-4-test",
+		"agents_dir": "/custom/agents",
+		"provider": {
+			"name": "anthropic",
+			"id": "anthropic",
+			"api_endpoint": "https://api.anthropic.com/v1"
+		}
+	}`
+	if _, err := tmpFile.WriteString(configJSON); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	tmpFile.Close()
+
+	// Load config
+	cfg, err := Load(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	// Verify loaded values
+	if cfg.DefaultModel != "gpt-4-test" {
+		t.Errorf("expected model 'gpt-4-test', got %q", cfg.DefaultModel)
+	}
+	if cfg.AgentsDir != "/custom/agents" {
+		t.Errorf("expected agents_dir '/custom/agents', got %q", cfg.AgentsDir)
+	}
+	if cfg.Provider.Name != "anthropic" {
+		t.Errorf("expected provider name 'anthropic', got %q", cfg.Provider.Name)
+	}
+	if cfg.Schema != "./ayo-schema.json" {
+		t.Errorf("expected $schema './ayo-schema.json', got %q", cfg.Schema)
+	}
+}
+
+func TestLoadMissingConfig(t *testing.T) {
+	// Load from non-existent file should return defaults
+	cfg, err := Load("/nonexistent/path/ayo.json")
+	if err != nil {
+		t.Fatalf("load missing config should not error: %v", err)
+	}
+
+	// Should have default values
+	if cfg.DefaultModel != "gpt-4.1" {
+		t.Errorf("expected default model 'gpt-4.1', got %q", cfg.DefaultModel)
+	}
+}

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ayo.alexcabrera.me/ayo.json",
+  "title": "Ayo Configuration",
+  "description": "Configuration schema for the ayo CLI tool",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema reference for IDE support"
+    },
+    "agents_dir": {
+      "type": "string",
+      "description": "Directory for user-created agents. Defaults to ~/.config/ayo/agents"
+    },
+    "skills_dir": {
+      "type": "string",
+      "description": "Directory for user shared skills. Defaults to ~/.config/ayo/skills"
+    },
+    "system_prefix": {
+      "type": "string",
+      "description": "Path to system prompt prefix file. If empty, uses paths.FindPromptFile('system-prefix.md')"
+    },
+    "system_suffix": {
+      "type": "string",
+      "description": "Path to system prompt suffix file. If empty, uses paths.FindPromptFile('system-suffix.md')"
+    },
+    "default_model": {
+      "type": "string",
+      "description": "Default LLM model to use",
+      "default": "gpt-4.1"
+    },
+    "catwalk_base_url": {
+      "type": "string",
+      "description": "Base URL for Catwalk API. Defaults to CATWALK_URL env var or http://localhost:8080",
+      "format": "uri"
+    },
+    "provider": {
+      "type": "object",
+      "description": "LLM provider configuration",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Human-readable provider name",
+          "examples": ["openai", "anthropic", "google", "openrouter"]
+        },
+        "id": {
+          "type": "string",
+          "description": "Provider identifier used for API key environment variable lookup",
+          "enum": ["openai", "anthropic", "google", "openrouter", "azure", "bedrock", "vertex", "groq", "mistral", "together", "fireworks", "deepseek", "xai"],
+          "examples": ["openai", "anthropic"]
+        },
+        "api_endpoint": {
+          "type": "string",
+          "description": "API endpoint URL for the provider",
+          "format": "uri",
+          "examples": ["https://api.openai.com/v1", "https://api.anthropic.com/v1"]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

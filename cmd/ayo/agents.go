@@ -181,6 +181,9 @@ func createAgentCmd(cfgPath *string) *cobra.Command {
 		// Chaining
 		inputSchema  string
 		outputSchema string
+
+		// Dev mode
+		devMode bool
 	)
 
 	cmd := &cobra.Command{
@@ -208,12 +211,20 @@ Examples:
     --model claude-3.5-sonnet \
     --system-file ~/prompts/reviewer.md \
     --input-schema ~/schemas/input.json \
-    --output-schema ~/schemas/output.json`,
+    --output-schema ~/schemas/output.json
+
+  # Create in local project directory for testing
+  ayo agents create @myagent --dev`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var handle string
 			if len(args) > 0 {
 				handle = agent.NormalizeHandle(args[0])
+			}
+
+			// If dev mode, use local config directory
+			if devMode {
+				paths.SetLocalDevMode()
 			}
 
 			return withConfig(cfgPath, func(cfg config.Config) error {
@@ -308,8 +319,9 @@ Examples:
 					}
 				}
 
-				// Default tools
-				if len(tools) == 0 {
+				// Default tools only for non-interactive mode (CLI flags)
+				// Interactive mode explicitly sets tools from wizard selection
+				if !needsInteractive && len(tools) == 0 {
 					tools = []string{"bash"}
 				}
 
@@ -332,16 +344,12 @@ Examples:
 				fmt.Println(successStyle.Render("✓ Created agent: " + ag.Handle))
 				fmt.Printf("  Location: %s\n", ag.Dir)
 
-				// Show what was configured
+				// Show what was configured (from config, not resolved)
 				if len(ag.Config.AllowedTools) > 0 {
 					fmt.Printf("  Tools: %s\n", strings.Join(ag.Config.AllowedTools, ", "))
 				}
-				if len(ag.Skills) > 0 {
-					skillNames := make([]string, len(ag.Skills))
-					for i, s := range ag.Skills {
-						skillNames[i] = s.Name
-					}
-					fmt.Printf("  Skills: %s\n", strings.Join(skillNames, ", "))
+				if len(ag.Config.Skills) > 0 {
+					fmt.Printf("  Skills: %s\n", strings.Join(ag.Config.Skills, ", "))
 				}
 				if ag.HasInputSchema() || ag.HasOutputSchema() {
 					fmt.Println("  Chaining: enabled")
@@ -370,6 +378,9 @@ Examples:
 	// Schema flags
 	cmd.Flags().StringVar(&inputSchema, "input-schema", "", "path to input JSON schema file (for chaining)")
 	cmd.Flags().StringVar(&outputSchema, "output-schema", "", "path to output JSON schema file (for chaining)")
+
+	// Dev mode flag
+	cmd.Flags().BoolVar(&devMode, "dev", false, "create agent in local ./.config/ayo/ directory for testing")
 
 	return cmd
 }

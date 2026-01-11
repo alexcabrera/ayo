@@ -182,6 +182,11 @@ func ForceInstall() (string, error) {
 		return "", fmt.Errorf("extract prompts: %w", err)
 	}
 
+	// Install config schema to user config directory
+	if err := InstallConfigSchema(); err != nil {
+		return "", fmt.Errorf("install config schema: %w", err)
+	}
+
 	// Write version marker
 	if err := os.WriteFile(versionFile, []byte(Version), 0o644); err != nil {
 		return "", fmt.Errorf("write version file: %w", err)
@@ -483,4 +488,31 @@ func compareSkillFiles(skillName, installedDir string) ([]string, error) {
 	})
 
 	return modifiedFiles, err
+}
+
+// ConfigSchemaFile returns the path where the config schema is installed.
+// Location: ~/.config/ayo/ayo-schema.json (Unix) or %LOCALAPPDATA%\ayo\ayo-schema.json (Windows)
+func ConfigSchemaFile() string {
+	return paths.ConfigSchemaFile()
+}
+
+// InstallConfigSchema writes the embedded config schema to the user config directory.
+func InstallConfigSchema() error {
+	if len(ConfigSchema) == 0 {
+		return nil // No schema embedded
+	}
+
+	schemaPath := ConfigSchemaFile()
+
+	// Ensure config directory exists
+	if err := os.MkdirAll(paths.ConfigDir(), 0o755); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+
+	// Write schema file
+	if err := os.WriteFile(schemaPath, ConfigSchema, 0o644); err != nil {
+		return fmt.Errorf("write schema: %w", err)
+	}
+
+	return nil
 }

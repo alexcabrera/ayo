@@ -61,8 +61,8 @@ func TestBuiltinSkillsDir(t *testing.T) {
 
 func TestConfigFile(t *testing.T) {
 	file := ConfigFile()
-	if !strings.HasSuffix(file, "config.yaml") {
-		t.Errorf("ConfigFile should end with config.yaml: got %s", file)
+	if !strings.HasSuffix(file, "ayo.json") {
+		t.Errorf("ConfigFile should end with ayo.json: got %s", file)
 	}
 }
 

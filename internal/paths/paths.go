@@ -155,7 +155,7 @@ func DataDir() string {
 // Windows: %LOCALAPPDATA%\ayo (same as production DataDir)
 //
 // This directory stores user configuration and user-created content:
-// config.yaml, user agents, user skills, and system prompts.
+// ayo.json, user agents, user skills, and system prompts.
 // This is always the global user directory, even in dev mode (unless local dev mode).
 func ConfigDir() string {
 	if localDevMode {
@@ -205,10 +205,17 @@ func BuiltinSkillsDir() string {
 }
 
 // ConfigFile returns the path to the main config file.
-// Location: ~/.config/ayo/config.yaml (Unix) or %LOCALAPPDATA%\ayo\config.yaml (Windows)
+// Location: ~/.config/ayo/ayo.json (Unix) or %LOCALAPPDATA%\ayo\ayo.json (Windows)
 // This is always the global user config, even in dev mode.
 func ConfigFile() string {
-	return filepath.Join(ConfigDir(), "config.yaml")
+	return filepath.Join(ConfigDir(), "ayo.json")
+}
+
+// ConfigSchemaFile returns the path to the config JSON schema file.
+// Location: ~/.config/ayo/ayo-schema.json (Unix) or %LOCALAPPDATA%\ayo\ayo-schema.json (Windows)
+// The schema is installed during setup and enables IDE validation/autocomplete.
+func ConfigSchemaFile() string {
+	return filepath.Join(ConfigDir(), "ayo-schema.json")
 }
 
 // SystemPromptsDir returns the directory for system prompt files.

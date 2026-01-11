@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -8,18 +9,18 @@ import (
 	"ayo/internal/paths"
 
 	"github.com/charmbracelet/catwalk/pkg/catwalk"
-	"gopkg.in/yaml.v3"
 )
 
 // Config represents the CLI configuration for ayo.
 type Config struct {
-	AgentsDir      string           `yaml:"agents_dir"`
-	SystemPrefix   string           `yaml:"system_prefix"`
-	SystemSuffix   string           `yaml:"system_suffix"`
-	SkillsDir      string           `yaml:"skills_dir"`
-	DefaultModel   string           `yaml:"default_model"`
-	CatwalkBaseURL string           `yaml:"catwalk_base_url"`
-	Provider       catwalk.Provider `yaml:"provider"`
+	Schema         string           `json:"$schema,omitempty"`
+	AgentsDir      string           `json:"agents_dir,omitempty"`
+	SystemPrefix   string           `json:"system_prefix,omitempty"`
+	SystemSuffix   string           `json:"system_suffix,omitempty"`
+	SkillsDir      string           `json:"skills_dir,omitempty"`
+	DefaultModel   string           `json:"default_model,omitempty"`
+	CatwalkBaseURL string           `json:"catwalk_base_url,omitempty"`
+	Provider       catwalk.Provider `json:"provider,omitempty"`
 }
 
 func apiKeyEnvForProvider(p catwalk.Provider) string {
@@ -65,7 +66,7 @@ func Load(path string) (Config, error) {
 		return cfg, fmt.Errorf("read config: %w", err)
 	}
 
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := json.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("parse config: %w", err)
 	}
 

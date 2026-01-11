@@ -16,6 +16,10 @@ var agentsFS embed.FS
 //go:embed prompts/*
 var promptsFS embed.FS
 
+// ConfigSchema is the embedded JSON schema for ayo configuration.
+// Loaded from the root ayo-config-schema.json via a separate embed directive.
+var ConfigSchema []byte
+
 // AgentDefinition represents a built-in agent's configuration and content
 type AgentDefinition struct {
 	Handle      string

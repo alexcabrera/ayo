@@ -348,27 +348,25 @@ ayo chain example @ayo.debug.structured-io
 
 ### Config File
 
-The main config file is located at `~/.config/ayo/config.yaml`:
+The main config file is located at `~/.config/ayo/ayo.json`:
 
-```yaml
-# Override default directories
-agents_dir: ~/.config/ayo/agents
-skills_dir: ~/.config/ayo/skills
-
-# System prompts (applied to all agents)
-shared_system_message: ~/.config/ayo/prompts/system.md
-system_prefix: ~/.config/ayo/prompts/prefix.md
-system_suffix: ~/.config/ayo/prompts/suffix.md
-
-# Model configuration
-default_model: gpt-4.1
-
-# Provider configuration
-provider:
-  name: openai
-  id: openai
-  api_endpoint: https://api.openai.com/v1
+```json
+{
+  "$schema": "./ayo-schema.json",
+  "agents_dir": "~/.config/ayo/agents",
+  "skills_dir": "~/.config/ayo/skills",
+  "system_prefix": "~/.config/ayo/prompts/prefix.md",
+  "system_suffix": "~/.config/ayo/prompts/suffix.md",
+  "default_model": "gpt-4.1",
+  "provider": {
+    "name": "openai",
+    "id": "openai",
+    "api_endpoint": "https://api.openai.com/v1"
+  }
+}
 ```
+
+The JSON schema is installed at `~/.config/ayo/ayo-schema.json` and provides IDE autocomplete and validation. You can also reference the hosted schema at `https://ayo.alexcabrera.me/ayo.json`.
 
 ### Environment Variables
 
@@ -406,7 +404,8 @@ This allows project-specific agents/skills to override user and built-in ones.
 
 ```
 ~/.config/ayo/                    # User configuration
-├── config.yaml                   # Main config file
+├── ayo.json                      # Main config file
+├── ayo-schema.json               # JSON schema for config
 ├── agents/                       # User-defined agents
 │   └── @myagent/
 │       ├── config.json
