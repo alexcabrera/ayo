@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"ayo/internal/paths"
@@ -14,14 +13,13 @@ import (
 
 // Config represents the CLI configuration for ayo.
 type Config struct {
-	AgentsDir           string           `yaml:"agents_dir"`
-	SharedSystemMessage string           `yaml:"shared_system_message"`
-	SystemPrefix        string           `yaml:"system_prefix"`
-	SystemSuffix        string           `yaml:"system_suffix"`
-	SkillsDir           string           `yaml:"skills_dir"`
-	DefaultModel        string           `yaml:"default_model"`
-	CatwalkBaseURL      string           `yaml:"catwalk_base_url"`
-	Provider            catwalk.Provider `yaml:"provider"`
+	AgentsDir      string           `yaml:"agents_dir"`
+	SystemPrefix   string           `yaml:"system_prefix"`
+	SystemSuffix   string           `yaml:"system_suffix"`
+	SkillsDir      string           `yaml:"skills_dir"`
+	DefaultModel   string           `yaml:"default_model"`
+	CatwalkBaseURL string           `yaml:"catwalk_base_url"`
+	Provider       catwalk.Provider `yaml:"provider"`
 }
 
 func apiKeyEnvForProvider(p catwalk.Provider) string {
@@ -40,15 +38,13 @@ func defaultCatwalkURL() string {
 
 // Default returns a Config populated with default values.
 func Default() Config {
-	promptsDir := paths.SystemPromptsDir()
 	return Config{
-		AgentsDir:           paths.AgentsDir(),
-		SharedSystemMessage: filepath.Join(promptsDir, "system.md"),
-		SystemPrefix:        filepath.Join(promptsDir, "prefix.md"),
-		SystemSuffix:        filepath.Join(promptsDir, "suffix.md"),
-		SkillsDir:           paths.SkillsDir(),
-		DefaultModel:        "gpt-4.1",
-		CatwalkBaseURL:      defaultCatwalkURL(),
+		AgentsDir:      paths.AgentsDir(),
+		SystemPrefix:   "", // Uses paths.FindPromptFile("system-prefix.md")
+		SystemSuffix:   "", // Uses paths.FindPromptFile("system-suffix.md")
+		SkillsDir:      paths.SkillsDir(),
+		DefaultModel:   "gpt-4.1",
+		CatwalkBaseURL: defaultCatwalkURL(),
 		Provider: catwalk.Provider{
 			Name:        "openai",
 			ID:          catwalk.InferenceProviderOpenAI,

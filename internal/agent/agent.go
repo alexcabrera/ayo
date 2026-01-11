@@ -23,11 +23,10 @@ import (
 type Schema = schema.Schema
 
 type Config struct {
-	Model                     string   `json:"model"`
-	IgnoreSharedSystemMessage bool     `json:"ignore_shared_system_message"`
-	SystemFile                string   `json:"system_file"`
-	Description               string   `json:"description,omitempty"`
-	AllowedTools              []string `json:"allowed_tools,omitempty"`
+	Model       string   `json:"model"`
+	SystemFile  string   `json:"system_file"`
+	Description string   `json:"description,omitempty"`
+	AllowedTools []string `json:"allowed_tools,omitempty"`
 	
 	// Skill configuration
 	Skills            []string `json:"skills,omitempty"`             // Explicit include list
@@ -189,20 +188,26 @@ func loadFromDir(cfg config.Config, normalized string, baseDir string, isBuiltIn
 	}
 	agentSystem := strings.TrimSpace(string(systemBytes))
 
-	prefix := strings.TrimSpace(readOptional(cfg.SystemPrefix))
-	suffix := strings.TrimSpace(readOptional(cfg.SystemSuffix))
-	sharedSystem := strings.TrimSpace(readOptional(cfg.SharedSystemMessage))
+	// Load prefix and suffix using priority-based lookup
+	var prefix, suffix string
+	if cfg.SystemPrefix != "" {
+		prefix = strings.TrimSpace(readOptional(cfg.SystemPrefix))
+	} else if prefixPath := paths.FindPromptFile("system-prefix.md"); prefixPath != "" {
+		prefix = strings.TrimSpace(readOptional(prefixPath))
+	}
+	if cfg.SystemSuffix != "" {
+		suffix = strings.TrimSpace(readOptional(cfg.SystemSuffix))
+	} else if suffixPath := paths.FindPromptFile("system-suffix.md"); suffixPath != "" {
+		suffix = strings.TrimSpace(readOptional(suffixPath))
+	}
 
 	// Build environment context block (placed at top of system prompt)
 	envContext := buildEnvContext()
 
-	combinedParts := make([]string, 0, 6)
+	combinedParts := make([]string, 0, 4)
 	combinedParts = append(combinedParts, envContext)
 	if prefix != "" {
 		combinedParts = append(combinedParts, prefix)
-	}
-	if sharedSystem != "" && !agentConfig.IgnoreSharedSystemMessage {
-		combinedParts = append(combinedParts, sharedSystem)
 	}
 	combinedParts = append(combinedParts, agentSystem)
 	if suffix != "" {
@@ -450,10 +455,79 @@ type InputValidationError struct {
 }
 
 func (e *InputValidationError) Error() string {
-	if e.ParseError != nil {
-		return fmt.Sprintf("input validation failed: %v", e.ParseError)
+	var msg strings.Builder
+
+	msg.WriteString("This agent requires structured JSON input.\n\n")
+
+	// Check if it's a JSON parse error vs schema validation error
+	if e.ParseError != nil && strings.Contains(e.ParseError.Error(), "input must be valid JSON") {
+		msg.WriteString("Your input is not valid JSON.\n\n")
+	} else if e.ParseError != nil {
+		msg.WriteString(fmt.Sprintf("Validation error: %v\n\n", e.ParseError))
 	}
-	return "input validation failed: input does not match schema"
+
+	// Show expected schema structure
+	if e.Schema != nil && e.Schema.Properties != nil {
+		msg.WriteString("Expected format:\n")
+		msg.WriteString("  {\n")
+
+		// Collect property names for consistent ordering
+		var propNames []string
+		for name := range e.Schema.Properties {
+			propNames = append(propNames, name)
+		}
+		sort.Strings(propNames)
+
+		for i, name := range propNames {
+			prop := e.Schema.Properties[name]
+			required := ""
+			for _, r := range e.Schema.Required {
+				if r == name {
+					required = " (required)"
+					break
+				}
+			}
+
+			// Determine example value based on type
+			example := "..."
+			switch prop.Type {
+			case "string":
+				if len(prop.Enum) > 0 {
+					// Show enum values
+					var enumStrs []string
+					for _, v := range prop.Enum {
+						enumStrs = append(enumStrs, fmt.Sprintf("%q", v))
+					}
+					example = enumStrs[0]
+				} else {
+					example = "\"...\""
+				}
+			case "number", "integer":
+				example = "0"
+			case "boolean":
+				example = "true"
+			case "array":
+				example = "[...]"
+			case "object":
+				example = "{...}"
+			}
+
+			comma := ","
+			if i == len(propNames)-1 {
+				comma = ""
+			}
+
+			desc := ""
+			if prop.Description != "" {
+				desc = fmt.Sprintf("  // %s", prop.Description)
+			}
+
+			msg.WriteString(fmt.Sprintf("    %q: %s%s%s%s\n", name, example, comma, required, desc))
+		}
+		msg.WriteString("  }\n")
+	}
+
+	return msg.String()
 }
 
 // ValidateInput validates the given input against the agent's input schema.

@@ -153,6 +153,7 @@ func Install() error {
 func ForceInstall() (string, error) {
 	installDir := InstallDir()
 	skillsInstallDir := SkillsInstallDir()
+	promptsInstallDir := PromptsInstallDir()
 	versionFile := VersionFile()
 
 	// Create install directories
@@ -161,6 +162,9 @@ func ForceInstall() (string, error) {
 	}
 	if err := os.MkdirAll(skillsInstallDir, 0o755); err != nil {
 		return "", fmt.Errorf("create skills install dir: %w", err)
+	}
+	if err := os.MkdirAll(promptsInstallDir, 0o755); err != nil {
+		return "", fmt.Errorf("create prompts install dir: %w", err)
 	}
 
 	// Extract all agents (including agent-specific skills)
@@ -171,6 +175,11 @@ func ForceInstall() (string, error) {
 	// Extract shared built-in skills
 	if err := extractSkills(skillsInstallDir); err != nil {
 		return "", fmt.Errorf("extract skills: %w", err)
+	}
+
+	// Extract built-in prompts
+	if err := extractPrompts(promptsInstallDir); err != nil {
+		return "", fmt.Errorf("extract prompts: %w", err)
 	}
 
 	// Write version marker
@@ -314,6 +323,46 @@ func IsSkillInstalled(name string) bool {
 	dir := InstalledSkillDir(name)
 	info, err := os.Stat(dir)
 	return err == nil && info.IsDir()
+}
+
+// PromptsInstallDir returns the directory where built-in prompts are installed.
+// Location: ~/.local/share/ayo/prompts
+func PromptsInstallDir() string {
+	return paths.BuiltinPromptsDir()
+}
+
+// extractPrompts copies all embedded prompts to the install directory
+func extractPrompts(installDir string) error {
+	return fs.WalkDir(promptsFS, "prompts", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip the root "prompts" directory itself
+		if path == "prompts" {
+			return nil
+		}
+
+		// Calculate destination path (strip "prompts/" prefix)
+		relPath, _ := filepath.Rel("prompts", path)
+		destPath := filepath.Join(installDir, relPath)
+
+		if d.IsDir() {
+			return os.MkdirAll(destPath, 0o755)
+		}
+
+		// Read embedded file
+		data, err := promptsFS.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read embedded %s: %w", path, err)
+		}
+
+		// Write to destination
+		if err := os.WriteFile(destPath, data, 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", destPath, err)
+		}
+		return nil
+	})
 }
 
 // ModifiedSkill represents an installed skill that has local modifications

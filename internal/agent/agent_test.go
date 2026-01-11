@@ -18,18 +18,16 @@ func TestDefaultAgent(t *testing.T) {
 	}
 }
 
-func TestLoadCombinesPrefixSharedAgentSuffix(t *testing.T) {
+func TestLoadCombinesPrefixAgentSuffix(t *testing.T) {
 	home := t.TempDir()
 	cfg := config.Config{
-		AgentsDir:           filepath.Join(home, "ayo", "agents"),
-		SharedSystemMessage: filepath.Join(home, "ayo", "prompts", "system.md"),
-		SystemPrefix:        filepath.Join(home, "ayo", "prompts", "prefix.md"),
-		SystemSuffix:        filepath.Join(home, "ayo", "prompts", "suffix.md"),
-		DefaultModel:        "gpt-4.1",
+		AgentsDir:    filepath.Join(home, "ayo", "agents"),
+		SystemPrefix: filepath.Join(home, "ayo", "prompts", "system-prefix.md"),
+		SystemSuffix: filepath.Join(home, "ayo", "prompts", "system-suffix.md"),
+		DefaultModel: "gpt-4.1",
 	}
 
 	mustWrite(t, cfg.SystemPrefix, "PREFIX")
-	mustWrite(t, cfg.SharedSystemMessage, "SHARED")
 	mustWrite(t, cfg.SystemSuffix, "SUFFIX")
 
 	agentDir := filepath.Join(cfg.AgentsDir, "@alice")
@@ -46,7 +44,7 @@ func TestLoadCombinesPrefixSharedAgentSuffix(t *testing.T) {
 		t.Fatalf("combined should start with <environment>, got:\n%s", ag.CombinedSystem)
 	}
 	// Should contain the expected content in order
-	for _, expected := range []string{"</environment>", "PREFIX", "SHARED", "AGENT", "SUFFIX"} {
+	for _, expected := range []string{"</environment>", "PREFIX", "AGENT", "SUFFIX"} {
 		if !strings.Contains(ag.CombinedSystem, expected) {
 			t.Fatalf("combined should contain %q, got:\n%s", expected, ag.CombinedSystem)
 		}
@@ -57,58 +55,14 @@ func TestLoadCombinesPrefixSharedAgentSuffix(t *testing.T) {
 	}
 }
 
-func TestLoadSkipsSharedWhenIgnored(t *testing.T) {
-	home := t.TempDir()
-	cfg := config.Config{
-		AgentsDir:           filepath.Join(home, "ayo", "agents"),
-		SharedSystemMessage: filepath.Join(home, "ayo", "prompts", "system.md"),
-		SystemPrefix:        filepath.Join(home, "ayo", "prompts", "prefix.md"),
-		SystemSuffix:        filepath.Join(home, "ayo", "prompts", "suffix.md"),
-		DefaultModel:        "gpt-4.1",
-	}
-
-	mustWrite(t, cfg.SystemPrefix, "PREFIX")
-	mustWrite(t, cfg.SharedSystemMessage, "SHARED")
-	mustWrite(t, cfg.SystemSuffix, "SUFFIX")
-
-	agentDir := filepath.Join(cfg.AgentsDir, "@bob")
-	mustWrite(t, filepath.Join(agentDir, "system.md"), "AGENT")
-	writeAgentConfig(t, agentDir, Config{Model: "model-1", IgnoreSharedSystemMessage: true})
-
-	ag, err := Load(cfg, "@bob")
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-
-	// Should start with environment block
-	if !strings.HasPrefix(ag.CombinedSystem, "<environment>") {
-		t.Fatalf("combined should start with <environment>, got:\n%s", ag.CombinedSystem)
-	}
-	// Should contain PREFIX, AGENT, SUFFIX but NOT SHARED
-	for _, expected := range []string{"PREFIX", "AGENT", "SUFFIX"} {
-		if !strings.Contains(ag.CombinedSystem, expected) {
-			t.Fatalf("combined should contain %q, got:\n%s", expected, ag.CombinedSystem)
-		}
-	}
-	if strings.Contains(ag.CombinedSystem, "SHARED") {
-		t.Fatalf("combined should NOT contain SHARED when ignored, got:\n%s", ag.CombinedSystem)
-	}
-	if !strings.Contains(ag.CombinedSystem, "datetime:") {
-		t.Fatalf("combined should include datetime, got:\n%s", ag.CombinedSystem)
-	}
-}
-
 func TestLoadHandlesMissingPrefixSuffix(t *testing.T) {
 	home := t.TempDir()
 	cfg := config.Config{
-		AgentsDir:           filepath.Join(home, "ayo", "agents"),
-		SharedSystemMessage: filepath.Join(home, "ayo", "prompts", "system.md"),
-		SystemPrefix:        filepath.Join(home, "ayo", "prompts", "prefix_missing.md"),
-		SystemSuffix:        filepath.Join(home, "ayo", "prompts", "suffix_missing.md"),
-		DefaultModel:        "gpt-4.1",
+		AgentsDir:    filepath.Join(home, "ayo", "agents"),
+		SystemPrefix: filepath.Join(home, "ayo", "prompts", "prefix_missing.md"),
+		SystemSuffix: filepath.Join(home, "ayo", "prompts", "suffix_missing.md"),
+		DefaultModel: "gpt-4.1",
 	}
-
-	mustWrite(t, cfg.SharedSystemMessage, "SHARED")
 
 	agentDir := filepath.Join(cfg.AgentsDir, "@carol")
 	mustWrite(t, filepath.Join(agentDir, "system.md"), "AGENT")
@@ -123,11 +77,9 @@ func TestLoadHandlesMissingPrefixSuffix(t *testing.T) {
 	if !strings.HasPrefix(ag.CombinedSystem, "<environment>") {
 		t.Fatalf("combined should start with <environment>, got:\n%s", ag.CombinedSystem)
 	}
-	// Should contain SHARED and AGENT (no prefix/suffix)
-	for _, expected := range []string{"SHARED", "AGENT"} {
-		if !strings.Contains(ag.CombinedSystem, expected) {
-			t.Fatalf("combined should contain %q, got:\n%s", expected, ag.CombinedSystem)
-		}
+	// Should contain AGENT (no prefix/suffix since files don't exist)
+	if !strings.Contains(ag.CombinedSystem, "AGENT") {
+		t.Fatalf("combined should contain AGENT, got:\n%s", ag.CombinedSystem)
 	}
 	// Verify datetime is present with valid format in environment block
 	pattern := regexp.MustCompile(`datetime: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [A-Z]+`)

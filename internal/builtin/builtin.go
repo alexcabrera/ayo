@@ -13,6 +13,9 @@ import (
 //go:embed agents/*
 var agentsFS embed.FS
 
+//go:embed prompts/*
+var promptsFS embed.FS
+
 // AgentDefinition represents a built-in agent's configuration and content
 type AgentDefinition struct {
 	Handle      string
@@ -24,11 +27,10 @@ type AgentDefinition struct {
 
 // AgentConfig mirrors the user agent config structure
 type AgentConfig struct {
-	Model                     string   `json:"model,omitempty"`
-	IgnoreSharedSystemMessage bool     `json:"ignore_shared_system_message,omitempty"`
-	Description               string   `json:"description,omitempty"`
-	DelegateHint              string   `json:"delegate_hint,omitempty"`
-	AllowedTools              []string `json:"allowed_tools,omitempty"`
+	Model        string   `json:"model,omitempty"`
+	Description  string   `json:"description,omitempty"`
+	DelegateHint string   `json:"delegate_hint,omitempty"`
+	AllowedTools []string `json:"allowed_tools,omitempty"`
 }
 
 // SkillDefinition represents a built-in skill

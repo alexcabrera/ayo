@@ -2,7 +2,6 @@ package config
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -20,16 +19,13 @@ func TestDefaultPaths(t *testing.T) {
 		t.Fatalf("skills dir mismatch: got %s, want %s", cfg.SkillsDir, paths.SkillsDir())
 	}
 
-	// System prompts should be in the prompts directory
-	promptsDir := paths.SystemPromptsDir()
-	if cfg.SharedSystemMessage != filepath.Join(promptsDir, "system.md") {
-		t.Fatalf("shared system path mismatch: got %s", cfg.SharedSystemMessage)
+	// System prompts are now resolved at load time via paths.FindPromptFile
+	// Default config has empty strings for SystemPrefix and SystemSuffix
+	if cfg.SystemPrefix != "" {
+		t.Fatalf("expected empty SystemPrefix, got %s", cfg.SystemPrefix)
 	}
-	if cfg.SystemPrefix != filepath.Join(promptsDir, "prefix.md") {
-		t.Fatalf("prefix path mismatch: got %s", cfg.SystemPrefix)
-	}
-	if cfg.SystemSuffix != filepath.Join(promptsDir, "suffix.md") {
-		t.Fatalf("suffix path mismatch: got %s", cfg.SystemSuffix)
+	if cfg.SystemSuffix != "" {
+		t.Fatalf("expected empty SystemSuffix, got %s", cfg.SystemSuffix)
 	}
 
 	// All paths should contain "ayo"

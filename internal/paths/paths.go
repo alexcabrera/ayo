@@ -346,3 +346,42 @@ func SkillsDirs() []string {
 
 	return dirs
 }
+
+// BuiltinPromptsDir returns the directory for built-in prompts.
+// Dev mode: {repo}/.ayo/prompts or ./.local/share/ayo/prompts
+// Production: ~/.local/share/ayo/prompts
+func BuiltinPromptsDir() string {
+	return filepath.Join(DataDir(), "prompts")
+}
+
+// UserPromptsDir returns the user prompts directory for overrides.
+// Location: ~/.config/ayo/prompts or ./.config/ayo/prompts
+func UserPromptsDir() string {
+	return filepath.Join(ConfigDir(), "prompts")
+}
+
+// FindPromptFile looks for a prompt file in priority order:
+// 1. ./.config/ayo/prompts/{name}
+// 2. ~/.config/ayo/prompts/{name}
+// 3. ./.local/share/ayo/prompts/{name}
+// 4. ~/.local/share/ayo/prompts/{name}
+// Returns empty string if not found.
+func FindPromptFile(name string) string {
+	// Priority order: local config, user config, local data, user data
+	candidates := []string{
+		filepath.Join(LocalConfigDir(), "prompts", name),
+		filepath.Join(UserConfigDir(), "prompts", name),
+		filepath.Join(LocalDataDir(), "prompts", name),
+		filepath.Join(UserDataDir(), "prompts", name),
+	}
+
+	for _, path := range candidates {
+		if path == "" {
+			continue
+		}
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return ""
+}

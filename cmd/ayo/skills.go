@@ -38,8 +38,6 @@ func newSkillsCmd(cfgPath *string) *cobra.Command {
 }
 
 func listSkillsCmd(cfgPath *string) *cobra.Command {
-	var sourceFilter string
-
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all available skills",
@@ -50,59 +48,99 @@ func listSkillsCmd(cfgPath *string) *cobra.Command {
 					return fmt.Errorf("install builtins: %w", err)
 				}
 
-				// Discover all skills
+				// Discover all skills with proper source tagging
 				result := skills.DiscoverAll(skills.DiscoveryOptions{
-					SharedDirs: paths.SkillsDirs(),
+					UserSharedDir: cfg.SkillsDir,
+					BuiltinDir:    builtin.SkillsInstallDir(),
 				})
-
-				// Filter by source if specified
-				if sourceFilter != "" {
-					var filtered []skills.Metadata
-					for _, s := range result.Skills {
-						if s.Source.String() == sourceFilter {
-							filtered = append(filtered, s)
-						}
-					}
-					result.Skills = filtered
-				}
 
 				if len(result.Skills) == 0 {
 					fmt.Println("No skills found.")
 					return nil
 				}
 
+				// Color palette
+				purple := lipgloss.Color("#a78bfa")
+				cyan := lipgloss.Color("#67e8f9")
+				muted := lipgloss.Color("#6b7280")
+				text := lipgloss.Color("#e5e7eb")
+				subtle := lipgloss.Color("#374151")
+
 				// Styles
-				headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99"))
-				skillStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
-				sourceStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-				descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+				headerStyle := lipgloss.NewStyle().Bold(true).Foreground(purple)
+				sectionStyle := lipgloss.NewStyle().Foreground(muted).Bold(true)
+				iconStyle := lipgloss.NewStyle().Foreground(cyan)
+				nameStyle := lipgloss.NewStyle().Foreground(cyan).Bold(true)
+				descStyle := lipgloss.NewStyle().Foreground(text)
+				countStyle := lipgloss.NewStyle().Foreground(muted)
+				dividerStyle := lipgloss.NewStyle().Foreground(subtle)
+				emptyStyle := lipgloss.NewStyle().Foreground(muted).Italic(true)
 
-				fmt.Println(headerStyle.Render("Available Skills"))
-				fmt.Println(strings.Repeat("─", 60))
-
+				// Group skills by source
+				var userSkills, builtinSkills []skills.Metadata
 				for _, s := range result.Skills {
-					// Skill name and source
-					name := skillStyle.Render("📚 " + s.Name)
-					source := sourceStyle.Render(fmt.Sprintf("[%s]", s.Source.String()))
-					fmt.Printf("%-45s %s\n", name, source)
-
-					// Description (truncated)
-					desc := s.Description
-					if len(desc) > 55 {
-						desc = desc[:52] + "..."
+					switch s.Source {
+					case skills.SourceUserShared:
+						userSkills = append(userSkills, s)
+					case skills.SourceBuiltIn:
+						builtinSkills = append(builtinSkills, s)
 					}
-					fmt.Printf("   %s\n", descStyle.Render(desc))
 				}
 
-				fmt.Println(strings.Repeat("─", 60))
-				fmt.Printf("%d skills available\n", len(result.Skills))
+				// Render function for a skill
+				renderSkill := func(s skills.Metadata) {
+					icon := iconStyle.Render("◆")
+					name := nameStyle.Render(s.Name)
+					fmt.Printf("  %s %s\n", icon, name)
+
+					// Description (truncated, indented)
+					desc := s.Description
+					if len(desc) > 52 {
+						desc = desc[:49] + "..."
+					}
+					if desc != "" {
+						fmt.Printf("    %s\n", descStyle.Render(desc))
+					}
+				}
+
+				// Header
+				fmt.Println()
+				fmt.Println(headerStyle.Render("  Skills"))
+				fmt.Println(dividerStyle.Render("  " + strings.Repeat("─", 58)))
+
+				// User-defined skills section
+				fmt.Println()
+				fmt.Printf("  %s\n", sectionStyle.Render("User-defined"))
+				if len(userSkills) == 0 {
+					fmt.Printf("    %s\n", emptyStyle.Render("No user-defined skills"))
+					fmt.Printf("    %s\n", emptyStyle.Render("Create one with: ayo skills create <name> --shared"))
+				} else {
+					for _, s := range userSkills {
+						renderSkill(s)
+					}
+				}
+
+				// Built-in skills section
+				fmt.Println()
+				fmt.Printf("  %s\n", sectionStyle.Render("Built-in"))
+				if len(builtinSkills) == 0 {
+					fmt.Printf("    %s\n", emptyStyle.Render("No built-in skills installed"))
+					fmt.Printf("    %s\n", emptyStyle.Render("Run: ayo setup"))
+				} else {
+					for _, s := range builtinSkills {
+						renderSkill(s)
+					}
+				}
+
+				fmt.Println()
+				fmt.Println(dividerStyle.Render("  " + strings.Repeat("─", 58)))
+				fmt.Println(countStyle.Render(fmt.Sprintf("  %d skills", len(result.Skills))))
+				fmt.Println()
 
 				return nil
 			})
 		},
 	}
-
-	cmd.Flags().StringVar(&sourceFilter, "source", "", "filter by source (agent, user, installed, built-in)")
 
 	return cmd
 }

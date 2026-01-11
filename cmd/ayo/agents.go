@@ -41,8 +41,6 @@ func newAgentsCmd(cfgPath *string) *cobra.Command {
 }
 
 func listAgentsCmd(cfgPath *string) *cobra.Command {
-	var sourceFilter string
-
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all available agents",
@@ -58,11 +56,6 @@ func listAgentsCmd(cfgPath *string) *cobra.Command {
 					return err
 				}
 
-				if len(handles) == 0 {
-					fmt.Println("No agents found.")
-					return nil
-				}
-
 				// Color palette
 				purple := lipgloss.Color("#a78bfa")
 				cyan := lipgloss.Color("#67e8f9")
@@ -72,39 +65,22 @@ func listAgentsCmd(cfgPath *string) *cobra.Command {
 
 				// Styles
 				headerStyle := lipgloss.NewStyle().Bold(true).Foreground(purple)
+				sectionStyle := lipgloss.NewStyle().Foreground(muted).Bold(true)
 				iconStyle := lipgloss.NewStyle().Foreground(cyan)
 				handleStyle := lipgloss.NewStyle().Foreground(cyan).Bold(true)
-				sourceStyle := lipgloss.NewStyle().Foreground(muted)
 				descStyle := lipgloss.NewStyle().Foreground(text)
 				countStyle := lipgloss.NewStyle().Foreground(muted)
 				dividerStyle := lipgloss.NewStyle().Foreground(subtle)
+				emptyStyle := lipgloss.NewStyle().Foreground(muted).Italic(true)
 
-				// Header
-				fmt.Println()
-				fmt.Println(headerStyle.Render("  Agents"))
-				fmt.Println(dividerStyle.Render("  " + strings.Repeat("─", 58)))
+				// Categorize agents
+				type agentInfo struct {
+					handle string
+					desc   string
+				}
+				var userAgents, builtinAgents []agentInfo
 
-				count := 0
 				for _, h := range handles {
-					// Determine source
-					isBuiltin := builtin.HasAgent(h)
-					source := "user"
-					if isBuiltin {
-						// Check if user has overridden
-						userDir := filepath.Join(cfg.AgentsDir, h)
-						if _, err := os.Stat(userDir); err == nil {
-							source = "user"
-						} else {
-							source = "built-in"
-						}
-					}
-
-					// Filter by source if specified
-					if sourceFilter != "" && source != sourceFilter {
-						continue
-					}
-					count++
-
 					// Get description
 					ag, err := agent.Load(cfg, h)
 					desc := ""
@@ -112,22 +88,30 @@ func listAgentsCmd(cfgPath *string) *cobra.Command {
 						desc = ag.Config.Description
 					}
 
-					// Format: ◆ @handle                              [source]
-					icon := iconStyle.Render("◆")
-					handle := handleStyle.Render(h)
-					sourceLabel := sourceStyle.Render(source)
-
-					// Calculate padding for alignment
-					handleWidth := lipgloss.Width(h)
-					padding := 50 - handleWidth
-					if padding < 2 {
-						padding = 2
+					// Determine source
+					isBuiltin := builtin.HasAgent(h)
+					if isBuiltin {
+						// Check if user has overridden
+						userDir := filepath.Join(cfg.AgentsDir, h)
+						if _, err := os.Stat(userDir); err == nil {
+							userAgents = append(userAgents, agentInfo{h, desc})
+						} else {
+							builtinAgents = append(builtinAgents, agentInfo{h, desc})
+						}
+					} else {
+						userAgents = append(userAgents, agentInfo{h, desc})
 					}
+				}
 
-					fmt.Printf("  %s %s%s%s\n", icon, handle, strings.Repeat(" ", padding), sourceLabel)
+				// Render function for an agent
+				renderAgent := func(a agentInfo) {
+					icon := iconStyle.Render("◆")
+					handle := handleStyle.Render(a.handle)
+					fmt.Printf("  %s %s\n", icon, handle)
 
 					// Description (truncated, indented)
-					if desc != "" {
+					if a.desc != "" {
+						desc := a.desc
 						if len(desc) > 52 {
 							desc = desc[:49] + "..."
 						}
@@ -135,16 +119,44 @@ func listAgentsCmd(cfgPath *string) *cobra.Command {
 					}
 				}
 
+				// Header
+				fmt.Println()
+				fmt.Println(headerStyle.Render("  Agents"))
 				fmt.Println(dividerStyle.Render("  " + strings.Repeat("─", 58)))
-				fmt.Println(countStyle.Render(fmt.Sprintf("  %d agents", count)))
+
+				// User-defined agents section
+				fmt.Println()
+				fmt.Printf("  %s\n", sectionStyle.Render("User-defined"))
+				if len(userAgents) == 0 {
+					fmt.Printf("    %s\n", emptyStyle.Render("No user-defined agents"))
+					fmt.Printf("    %s\n", emptyStyle.Render("Create one with: ayo agents create @name"))
+				} else {
+					for _, a := range userAgents {
+						renderAgent(a)
+					}
+				}
+
+				// Built-in agents section
+				fmt.Println()
+				fmt.Printf("  %s\n", sectionStyle.Render("Built-in"))
+				if len(builtinAgents) == 0 {
+					fmt.Printf("    %s\n", emptyStyle.Render("No built-in agents installed"))
+					fmt.Printf("    %s\n", emptyStyle.Render("Run: ayo setup"))
+				} else {
+					for _, a := range builtinAgents {
+						renderAgent(a)
+					}
+				}
+
+				fmt.Println()
+				fmt.Println(dividerStyle.Render("  " + strings.Repeat("─", 58)))
+				fmt.Println(countStyle.Render(fmt.Sprintf("  %d agents", len(handles))))
 				fmt.Println()
 
 				return nil
 			})
 		},
 	}
-
-	cmd.Flags().StringVar(&sourceFilter, "source", "", "filter by source (user, built-in)")
 
 	return cmd
 }
@@ -165,7 +177,6 @@ func createAgentCmd(cfgPath *string) *cobra.Command {
 		excludeSkills       []string
 		ignoreBuiltinSkills bool
 		ignoreSharedSkills  bool
-		ignoreSharedSystem  bool
 
 		// Chaining
 		inputSchema  string
@@ -221,9 +232,10 @@ Examples:
 					ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Minute)
 					defer cancel()
 
-					// Discover available skills for the form
+					// Discover available skills for the form with proper source tagging
 					discoveredSkills := skills.DiscoverAll(skills.DiscoveryOptions{
-						SharedDirs: paths.SkillsDirs(),
+						UserSharedDir: cfg.SkillsDir,
+						BuiltinDir:    builtin.SkillsInstallDir(),
 					})
 
 					// Available tools
@@ -249,7 +261,6 @@ Examples:
 					skills_ = res.Skills
 					ignoreBuiltinSkills = res.IgnoreBuiltinSkills
 					ignoreSharedSkills = res.IgnoreSharedSkills
-					ignoreSharedSystem = res.IgnoreSharedSystem
 					system = res.SystemMessage
 					inputSchema = res.InputSchemaFile
 					outputSchema = res.OutputSchemaFile
@@ -303,14 +314,13 @@ Examples:
 				}
 
 				agCfg := agent.Config{
-					Model:                     model,
-					Description:               description,
-					AllowedTools:              tools,
-					Skills:                    skills_,
-					ExcludeSkills:             excludeSkills,
-					IgnoreBuiltinSkills:       ignoreBuiltinSkills,
-					IgnoreSharedSkills:        ignoreSharedSkills,
-					IgnoreSharedSystemMessage: ignoreSharedSystem,
+					Model:               model,
+					Description:         description,
+					AllowedTools:        tools,
+					Skills:              skills_,
+					ExcludeSkills:       excludeSkills,
+					IgnoreBuiltinSkills: ignoreBuiltinSkills,
+					IgnoreSharedSkills:  ignoreSharedSkills,
 				}
 
 				ag, err := agent.SaveWithSchemas(cfg, handle, agCfg, system, inputSchema, outputSchema)
@@ -356,7 +366,6 @@ Examples:
 	cmd.Flags().StringSliceVar(&excludeSkills, "exclude-skills", nil, "skills to exclude")
 	cmd.Flags().BoolVar(&ignoreBuiltinSkills, "ignore-builtin-skills", false, "ignore built-in skills")
 	cmd.Flags().BoolVar(&ignoreSharedSkills, "ignore-shared-skills", false, "ignore shared skills")
-	cmd.Flags().BoolVar(&ignoreSharedSystem, "ignore-shared-system", false, "ignore shared system message")
 
 	// Schema flags
 	cmd.Flags().StringVar(&inputSchema, "input-schema", "", "path to input JSON schema file (for chaining)")

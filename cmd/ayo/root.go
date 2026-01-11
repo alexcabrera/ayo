@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
 	"ayo/internal/agent"
@@ -77,7 +80,7 @@ func newRootCmd() *cobra.Command {
 						if ag.HasInputSchema() {
 							// Agent has input schema: stdin must be valid JSON matching schema
 							if err := ag.ValidateInput(stdinData); err != nil {
-								return formatInputValidationError(err, stdinData, ag)
+								return printInputValidationError(err)
 							}
 							prompt = stdinData
 						} else {
@@ -95,7 +98,7 @@ func newRootCmd() *cobra.Command {
 
 						// Validate input against schema if agent has one
 						if err := ag.ValidateInput(prompt); err != nil {
-							return err
+							return printInputValidationError(err)
 						}
 					}
 
@@ -147,27 +150,37 @@ func withConfig(cfgPath *string, fn func(config.Config) error) error {
 	return fn(cfg)
 }
 
-// formatInputValidationError creates a detailed error message for input validation failures.
-func formatInputValidationError(err error, receivedInput string, ag agent.Agent) error {
-	ctx := pipe.GetChainContext()
-	var sourceInfo string
-	if ctx != nil && ctx.Source != "" {
-		sourceInfo = fmt.Sprintf("\nReceived from: %s", ctx.Source)
-		if ctx.SourceDescription != "" {
-			sourceInfo += fmt.Sprintf(" (%s)", ctx.SourceDescription)
+// printInputValidationError prints a formatted input validation error to stderr.
+// Returns a simple error to signal failure without duplicating the message.
+func printInputValidationError(err error) error {
+	// Check if it's our custom InputValidationError
+	var validationErr *agent.InputValidationError
+	if errors.As(err, &validationErr) {
+		// Style the error
+		errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+		headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+		codeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, errorStyle.Render("  ERROR: Agent requires structured JSON input"))
+		fmt.Fprintln(os.Stderr)
+
+		// The error message from InputValidationError already has the schema info
+		errMsg := validationErr.Error()
+		for _, line := range strings.Split(errMsg, "\n") {
+			if strings.HasPrefix(line, "Expected format:") || strings.HasPrefix(line, "Your input") || strings.HasPrefix(line, "This agent") || strings.HasPrefix(line, "Validation error:") {
+				fmt.Fprintln(os.Stderr, "  "+headerStyle.Render(line))
+			} else {
+				fmt.Fprintln(os.Stderr, "  "+codeStyle.Render(line))
+			}
 		}
+		fmt.Fprintln(os.Stderr)
+		return errors.New("input validation failed")
 	}
-
-	// Truncate input if too long
-	displayInput := receivedInput
-	if len(displayInput) > 500 {
-		displayInput = displayInput[:500] + "\n... (truncated)"
-	}
-
-	return fmt.Errorf("input validation failed for %s%s\n\nReceived:\n%s\n\nError: %w",
-		ag.Handle, sourceInfo, displayInput, err)
+	return err
 }
 
+// formatInputValidationError creates a detailed error message for input validation failures.
 // buildFreeformPreamble creates a preamble for agents without input schemas
 // when receiving piped input from another agent.
 func buildFreeformPreamble(jsonInput string) string {
