@@ -6,8 +6,6 @@ import (
 	"os"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/huh"
 
 	"ayo/internal/skills"
@@ -30,12 +28,19 @@ type AgentCreateResult struct {
 	IgnoreSharedSkills  bool
 
 	// System
-	SystemMessage string
-	SystemFile    string
+	SystemMessage   string
+	SystemFile      string
+	NoSystemWrapper bool // If true, skip system prefix/suffix wrapping
 
 	// Chaining
 	InputSchemaFile  string
 	OutputSchemaFile string
+}
+
+// ToolInfo contains tool name and description for the wizard.
+type ToolInfo struct {
+	Name        string
+	Description string
 }
 
 // AgentCreateFormOptions provides configuration for the agent creation form.
@@ -44,10 +49,12 @@ type AgentCreateFormOptions struct {
 	Models []string
 	// AvailableSkills is the list of discovered skills.
 	AvailableSkills []skills.Metadata
-	// AvailableTools is the list of available tools.
-	AvailableTools []string
+	// AvailableTools is the list of available tools with descriptions.
+	AvailableTools []ToolInfo
 	// PrefilledHandle is an optional pre-filled handle from CLI args.
 	PrefilledHandle string
+	// ExistingHandles is a set of existing agent handles (normalized, lowercase, no @ prefix) for conflict detection.
+	ExistingHandles map[string]struct{}
 }
 
 // AgentCreateForm is a multi-step wizard for creating agents.
@@ -76,12 +83,17 @@ func (f *AgentCreateForm) Run(ctx context.Context) (AgentCreateResult, error) {
 		handleName = f.opts.PrefilledHandle
 	}
 
+	// Use pre-built existing handles set
+	existingHandles := f.opts.ExistingHandles
+	if existingHandles == nil {
+		existingHandles = make(map[string]struct{})
+	}
+
 	// Default tools selection
 	res.AllowedTools = []string{"bash"}
 
 	// Tracking variables for conditional groups
 	var systemSource string = "inline"
-	var enableChaining bool
 
 	// Build model options
 	modelOpts := make([]huh.Option[string], 0, len(f.opts.Models))
@@ -89,129 +101,30 @@ func (f *AgentCreateForm) Run(ctx context.Context) (AgentCreateResult, error) {
 		modelOpts = append(modelOpts, huh.NewOption(m, m))
 	}
 
-	// Build tool options with multi-line labels showing full description
-	toolDescriptions := map[string]string{
-		"bash":       "Execute shell commands to interact with the system",
-		"agent_call": "Delegate tasks to other specialized agents",
-	}
+	// Build tool options with descriptions
 	toolOpts := make([]huh.Option[string], 0, len(f.opts.AvailableTools))
 	for _, t := range f.opts.AvailableTools {
-		desc := toolDescriptions[t]
-		if desc == "" {
-			desc = t
+		label := t.Name
+		if t.Description != "" {
+			// Format: "name - description" with description dimmed
+			label = fmt.Sprintf("%s - %s", t.Name, t.Description)
 		}
-		// Multi-line label: name on first line, description indented on second
-		label := fmt.Sprintf("%s\n    %s", t, desc)
-		toolOpts = append(toolOpts, huh.NewOption(label, t))
+		toolOpts = append(toolOpts, huh.NewOption(label, t.Name))
 	}
 
-	// Build skill options with multi-line labels showing full description
+	// Build skill options with descriptions (word-wrapped)
 	skillOpts := make([]huh.Option[string], 0, len(f.opts.AvailableSkills))
 	for _, s := range f.opts.AvailableSkills {
-		// Multi-line label: name on first line, description indented on second
-		// Wrap long descriptions at ~60 chars
-		desc := wrapText(s.Description, 60, "    ")
-		label := fmt.Sprintf("%s\n%s", s.Name, desc)
+		label := s.Name
+		if s.Description != "" {
+			// Word-wrap description to ~50 chars, indent continuation lines
+			wrapped := wordWrap(s.Description, 50)
+			label = fmt.Sprintf("%s\n    %s", s.Name, wrapped)
+		}
 		skillOpts = append(skillOpts, huh.NewOption(label, s.Name))
 	}
 
 	hasSkills := len(f.opts.AvailableSkills) > 0
-
-	// Calculate step numbers dynamically
-	totalSteps := 5
-	if !hasSkills {
-		totalSteps = 4
-	}
-
-	skillsStepNum := 3
-	systemStepNum := 4
-	chainingStepNum := 5
-	if !hasSkills {
-		systemStepNum = 3
-		chainingStepNum = 4
-	}
-
-	// Create the form with all groups
-	groups := []*huh.Group{
-		// Step 1: Identity
-		huh.NewGroup(
-			huh.NewNote().
-				Title(fmt.Sprintf("Step 1 of %d ─ Identity", totalSteps)).
-				Description("Give your agent a unique handle (like @myagent) that you'll use to\ninvoke it. The description helps you remember what this agent does."),
-			huh.NewInput().
-				Title("Handle").
-				Prompt("@ ").
-				Placeholder("myagent").
-				Value(&handleName).
-				Validate(func(v string) error {
-					if v == "" {
-						return fmt.Errorf("required")
-					}
-					name := strings.TrimPrefix(v, "@")
-					if name == "" {
-						return fmt.Errorf("required")
-					}
-					if strings.HasPrefix(name, "ayo.") || name == "ayo" {
-						return fmt.Errorf("cannot use reserved 'ayo' namespace")
-					}
-					if strings.ContainsAny(name, " \t\n") {
-						return fmt.Errorf("handle cannot contain spaces")
-					}
-					return nil
-				}),
-			huh.NewInput().
-				Title("Description").
-				Placeholder("A helpful assistant that...").
-				Value(&res.Description),
-			huh.NewSelect[string]().
-				Title("Model").
-				Options(modelOpts...).
-				Value(&res.Model),
-		),
-
-		// Step 2: Tools
-		huh.NewGroup(
-			huh.NewNote().
-				Title(fmt.Sprintf("Step 2 of %d ─ Tools", totalSteps)).
-				Description("Tools let your agent interact with the outside world. The bash tool\nallows running shell commands. Use x/space to toggle selection."),
-			huh.NewMultiSelect[string]().
-				Title("Allowed Tools").
-				Options(toolOpts...).
-				Value(&res.AllowedTools),
-		),
-	}
-
-	// Step 3: Skills (conditional)
-	if hasSkills {
-		groups = append(groups,
-			huh.NewGroup(
-				huh.NewNote().
-					Title(fmt.Sprintf("Step %d of %d ─ Skills", skillsStepNum, totalSteps)).
-					Description("Skills are reusable instruction sets that teach your agent specialized\ntasks. Select any that match what you want this agent to do."),
-				huh.NewMultiSelect[string]().
-					Title("Available Skills").
-					Options(skillOpts...).
-					Value(&res.Skills).
-					Filterable(true),
-			),
-		)
-	}
-
-	// Step: System Prompt Source
-	groups = append(groups,
-		huh.NewGroup(
-			huh.NewNote().
-				Title(fmt.Sprintf("Step %d of %d ─ System Prompt", systemStepNum, totalSteps)).
-				Description("The system prompt defines your agent's personality, knowledge, and\nbehavior. You can write it inline or load from an existing file."),
-			huh.NewSelect[string]().
-				Title("Source").
-				Options(
-					huh.NewOption("Enter inline", "inline"),
-					huh.NewOption("Browse for file", "file"),
-				).
-				Value(&systemSource),
-		),
-	)
 
 	// Get editor name for help text
 	editorName := os.Getenv("EDITOR")
@@ -219,241 +132,389 @@ func (f *AgentCreateForm) Run(ctx context.Context) (AgentCreateResult, error) {
 		editorName = "vim"
 	}
 
-	// Step: System Prompt Content (inline) - same step number
-	groups = append(groups,
-		huh.NewGroup(
-			huh.NewNote().
-				Title(fmt.Sprintf("Step %d of %d ─ System Prompt", systemStepNum, totalSteps)).
-				Description("Enter the system message directly"),
-			huh.NewText().
-				Title("System message").
-				Placeholder("You are a helpful assistant...").
-				Description(fmt.Sprintf("ctrl+e to open in %s • alt+enter for newline", editorName)).
-				Value(&res.SystemMessage).
-				CharLimit(0).
-				Lines(10).
-				Editor(editorName),
-		).WithHideFunc(func() bool {
-			return systemSource != "inline"
-		}),
-	)
+	// Calculate total steps for progress indicator
+	totalSteps := 5 // Identity, Tools, System, Chaining, Confirm
+	if hasSkills {
+		totalSteps = 6 // Add Skills step
+	}
 
-	// Step: System Prompt Review (inline) - confirm before proceeding
-	var confirmSystemInline bool
-	groups = append(groups,
-		huh.NewGroup(
-			huh.NewNote().
-				Title(fmt.Sprintf("Step %d of %d ─ System Prompt", systemStepNum, totalSteps)).
-				DescriptionFunc(func() string {
-					if res.SystemMessage == "" {
-						return "No system message entered (will use default)"
-					}
-					rendered := renderMarkdownPreview(res.SystemMessage, 60)
-					return fmt.Sprintf("Preview:\n%s", rendered)
-				}, &res.SystemMessage),
-			huh.NewConfirm().
-				Title("Continue with this system prompt?").
-				Affirmative("Yes").
-				Negative("No, go back").
-				Value(&confirmSystemInline),
-		).WithHideFunc(func() bool {
-			return systemSource != "inline"
-		}),
-	)
+	// Step number tracking
+	stepIdentity := 1
+	stepTools := 2
+	stepSkills := 3
+	stepSystem := 4
+	stepChaining := 5
+	stepConfirm := 6
+	if !hasSkills {
+		stepSystem = 3
+		stepChaining = 4
+		stepConfirm = 5
+	}
 
-	// Step: System Prompt Content (file) - directly show file picker
-	groups = append(groups,
-		huh.NewGroup(
-			huh.NewFilePicker().
-				Title(fmt.Sprintf("Step %d of %d ─ System Prompt", systemStepNum, totalSteps)).
-				Description("← or backspace to go up a directory").
-				CurrentDirectory(currentDir()).
-				AllowedTypes([]string{".md", ".txt"}).
-				Value(&res.SystemFile).
-				Picking(true).
-				Height(15),
-		).WithHideFunc(func() bool {
+	// Helper to format step title
+	stepTitle := func(step int, name string) string {
+		return fmt.Sprintf("Step %d of %d: %s", step, totalSteps, name)
+	}
+
+	// Build all groups
+	var groups []*huh.Group
+
+	// Step 1: Identity
+	groups = append(groups, huh.NewGroup(
+		huh.NewInput().
+			Title("Handle").
+			Prompt("@ ").
+			Placeholder("myagent").
+			Value(&handleName).
+			Validate(func(v string) error {
+				if v == "" {
+					return fmt.Errorf("required")
+				}
+				name := strings.TrimPrefix(v, "@")
+				if name == "" {
+					return fmt.Errorf("required")
+				}
+				if strings.HasPrefix(name, "ayo.") || name == "ayo" {
+					return fmt.Errorf("cannot use reserved 'ayo' namespace")
+				}
+				if strings.ContainsAny(name, " \t\n") {
+					return fmt.Errorf("handle cannot contain spaces")
+				}
+				// Check for conflicts with existing agents
+				normalized := strings.ToLower(name)
+				if _, exists := existingHandles[normalized]; exists {
+					return fmt.Errorf("agent @%s already exists", name)
+				}
+				return nil
+			}),
+		huh.NewInput().
+			Title("Description").
+			Placeholder("A helpful assistant that...").
+			Value(&res.Description),
+		huh.NewSelect[string]().
+			Title("Model").
+			Options(modelOpts...).
+			Value(&res.Model),
+	).Title(stepTitle(stepIdentity, "Identity")).
+		Description("Define your agent's identity. The handle is how you'll invoke it (e.g., ayo @myagent).\n\nThe description helps you remember what this agent does, and the model determines its capabilities."))
+
+	// Step 2: Tools
+	groups = append(groups, huh.NewGroup(
+		huh.NewMultiSelect[string]().
+			Title("Allowed Tools").
+			Options(toolOpts...).
+			Value(&res.AllowedTools),
+	).Title(stepTitle(stepTools, "Tools")).
+		Description("Tools let your agent interact with the outside world. The bash tool allows running shell commands.\n\nSelect which tools this agent should have access to."))
+
+	// Step 3: Skills (only if skills exist)
+	if hasSkills {
+		groups = append(groups, huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Available Skills").
+				Options(skillOpts...).
+				Value(&res.Skills).
+				Filterable(true),
+		).Title(stepTitle(stepSkills, "Skills")).
+			Description("Skills are reusable instruction sets that teach your agent specialized tasks.\n\nSelect any skills that match what you want this agent to do."))
+	}
+
+	// Step 4: System Prompt Source
+	groups = append(groups, huh.NewGroup(
+		huh.NewSelect[string]().
+			Title("Source").
+			Options(
+				huh.NewOption("Write inline", "inline"),
+				huh.NewOption("Load from file", "file"),
+			).
+			Value(&systemSource),
+	).Title(stepTitle(stepSystem, "System Prompt")).
+		Description("The system prompt defines your agent's personality, knowledge, and behavior.\n\nYou can write it directly or load from an existing markdown file."))
+
+	// Step 4a: Inline system prompt
+	groups = append(groups, huh.NewGroup(
+		huh.NewText().
+			Title("System Message").
+			Description(fmt.Sprintf("ctrl+e to open in %s", editorName)).
+			Placeholder("You are a helpful assistant...").
+			Value(&res.SystemMessage).
+			CharLimit(0).
+			Lines(8).
+			Editor(editorName),
+	).Title(stepTitle(stepSystem, "System Prompt")).
+		Description("Enter the system message that defines how your agent should behave.").
+		WithHideFunc(func() bool {
+			return systemSource != "inline"
+		}))
+
+	// Step 4b: File picker for system prompt
+	groups = append(groups, huh.NewGroup(
+		huh.NewFilePicker().
+			Title("Select File").
+			Description("Choose a .md or .txt file").
+			CurrentDirectory(currentDir()).
+			AllowedTypes([]string{".md", ".txt"}).
+			Value(&res.SystemFile).
+			Picking(true).
+			Height(12),
+	).Title(stepTitle(stepSystem, "System Prompt")).
+		Description("Browse and select a markdown or text file containing your system prompt.").
+		WithHideFunc(func() bool {
 			return systemSource != "file"
-		}),
-	)
+		}))
 
-	// Step: System Prompt File Preview - show file contents before confirming
+	// Step 4b-preview: Confirm system prompt file with preview
 	var confirmSystemFile bool
-	groups = append(groups,
-		huh.NewGroup(
-			huh.NewNote().
-				Title(fmt.Sprintf("Step %d of %d ─ System Prompt", systemStepNum, totalSteps)).
-				DescriptionFunc(func() string {
-					if res.SystemFile == "" {
-						return "No file selected\n\nshift+tab to go back and select a file"
-					}
-					content, err := readFileContent(res.SystemFile)
-					if err != nil {
-						return fmt.Sprintf("Error reading file: %v\n\nshift+tab to go back", err)
-					}
-					rendered := renderMarkdownPreview(content, 60)
-					return fmt.Sprintf("File: %s\n%s", shortenPath(res.SystemFile), rendered)
-				}, &res.SystemFile),
-			huh.NewConfirm().
-				Title("Use this file?").
-				Affirmative("Yes").
-				Negative("No, go back").
-				Value(&confirmSystemFile),
-		).WithHideFunc(func() bool {
-			return systemSource != "file"
-		}),
-	)
+	groups = append(groups, huh.NewGroup(
+		NewFilePreviewField().
+			FilePath(&res.SystemFile).
+			Title("File Contents").
+			Height(15),
+		huh.NewConfirm().
+			TitleFunc(func() string {
+				return fmt.Sprintf("Use %s?", shortenPath(res.SystemFile))
+			}, &res.SystemFile).
+			Affirmative("Yes").
+			Negative("No, go back").
+			Value(&confirmSystemFile),
+	).Title(stepTitle(stepSystem, "System Prompt")).
+		Description("Review the file contents below.").
+		WithHideFunc(func() bool {
+			return systemSource != "file" || res.SystemFile == ""
+		}))
 
-	// Step: Chaining
-	groups = append(groups,
-		huh.NewGroup(
-			huh.NewNote().
-				Title(fmt.Sprintf("Step %d of %d ─ Agent Chaining", chainingStepNum, totalSteps)).
-				Description("Chaining lets you connect agents together using Unix pipes, where one\nagent's output becomes another's input. This is useful for building\nmulti-step workflows like: analyze → summarize → format.\n\nTo enable chaining, your agent needs JSON schemas that define the\nstructure of its input and output data."),
-			huh.NewConfirm().
-				Title("Enable chaining for this agent?").
-				Description("You can add this later by creating schema files in the agent directory").
-				Value(&enableChaining),
-		),
-	)
+	// Step 4c: System Wrapper Option (shown after system prompt is defined)
+	groups = append(groups, huh.NewGroup(
+		huh.NewConfirm().
+			Title("Disable System Wrapper?").
+			Description("WARNING: Not recommended. The wrapper provides essential tool instructions,\nsafety guidelines, and consistent behavior. Only disable if you fully\nunderstand the implications and need complete control.").
+			Affirmative("Yes, I understand the risks").
+			Negative("No, keep wrapper (recommended)").
+			Value(&res.NoSystemWrapper),
+	).Title(stepTitle(stepSystem, "System Prompt")).
+		Description("The system wrapper is strongly recommended. It provides critical instructions\nfor tool usage, error handling, and agent behavior that most agents need.\n\nDisabling it may cause tools to malfunction or produce unexpected results."))
 
-	// Step: Input Schema (conditional on chaining)
-	groups = append(groups,
-		huh.NewGroup(
-			huh.NewFilePicker().
-				Title(fmt.Sprintf("Step %d of %d ─ Input Schema", chainingStepNum, totalSteps)).
-				Description("← to go up • enter to select or skip").
-				CurrentDirectory(currentDir()).
-				AllowedTypes([]string{".json", ".jsonschema"}).
-				Value(&res.InputSchemaFile).
-				Picking(true).
-				Height(12),
-		).WithHideFunc(func() bool {
-			return !enableChaining
-		}),
-	)
+	// Step 5: Structured I/O - Input Schema
+	var useInputSchema bool
+	groups = append(groups, huh.NewGroup(
+		huh.NewConfirm().
+			Title("Define Input Schema?").
+			Description("An input schema validates JSON data passed to this agent via stdin.").
+			Affirmative("Yes").
+			Negative("No (freeform input)").
+			Value(&useInputSchema),
+	).Title(stepTitle(stepChaining, "Structured I/O")).
+		Description("Schemas enable agent chaining via Unix pipes.\n\nDefine an input schema if this agent should accept structured JSON input."))
 
-	// Step: Input Schema Preview - show file contents before confirming
+	// Step 5a: Input schema file picker
+	groups = append(groups, huh.NewGroup(
+		huh.NewFilePicker().
+			Title("Select Input Schema").
+			Description("Choose a .json or .jsonschema file").
+			CurrentDirectory(currentDir()).
+			AllowedTypes([]string{".json", ".jsonschema"}).
+			Value(&res.InputSchemaFile).
+			Picking(true).
+			Height(10),
+	).Title(stepTitle(stepChaining, "Input Schema")).
+		Description("Select the JSON schema file that defines valid input for this agent.").
+		WithHideFunc(func() bool {
+			return !useInputSchema
+		}))
+
+	// Step 5a-preview: Confirm input schema with preview
 	var confirmInputSchema bool
-	groups = append(groups,
-		huh.NewGroup(
-			huh.NewNote().
-				Title(fmt.Sprintf("Step %d of %d ─ Input Schema", chainingStepNum, totalSteps)).
-				DescriptionFunc(func() string {
-					if res.InputSchemaFile == "" {
-						return "No file selected (skipping input schema)"
-					}
-					content, err := readFilePreview(res.InputSchemaFile, 15)
-					if err != nil {
-						return fmt.Sprintf("Error reading file: %v", err)
-					}
-					return fmt.Sprintf("File: %s\n\n%s", shortenPath(res.InputSchemaFile), content)
-				}, &res.InputSchemaFile),
-			huh.NewConfirm().
-				Title("Use this file?").
-				Affirmative("Yes").
-				Negative("No, go back").
-				Value(&confirmInputSchema),
-		).WithHideFunc(func() bool {
-			return !enableChaining || res.InputSchemaFile == ""
-		}),
-	)
+	groups = append(groups, huh.NewGroup(
+		NewFilePreviewField().
+			FilePath(&res.InputSchemaFile).
+			Title("Schema Contents").
+			Height(12),
+		huh.NewConfirm().
+			TitleFunc(func() string {
+				return fmt.Sprintf("Use %s?", shortenPath(res.InputSchemaFile))
+			}, &res.InputSchemaFile).
+			Affirmative("Yes").
+			Negative("No, go back").
+			Value(&confirmInputSchema),
+	).Title(stepTitle(stepChaining, "Input Schema")).
+		Description("Review the schema below.").
+		WithHideFunc(func() bool {
+			return !useInputSchema || res.InputSchemaFile == ""
+		}))
 
-	// Step: Output Schema (conditional on chaining)
-	groups = append(groups,
-		huh.NewGroup(
-			huh.NewFilePicker().
-				Title(fmt.Sprintf("Step %d of %d ─ Output Schema", chainingStepNum, totalSteps)).
-				Description("← to go up • enter to select or skip").
-				CurrentDirectory(currentDir()).
-				AllowedTypes([]string{".json", ".jsonschema"}).
-				Value(&res.OutputSchemaFile).
-				Picking(true).
-				Height(12),
-		).WithHideFunc(func() bool {
-			return !enableChaining
-		}),
-	)
+	// Step 5b: Structured I/O - Output Schema
+	var useOutputSchema bool
+	groups = append(groups, huh.NewGroup(
+		huh.NewConfirm().
+			Title("Define Output Schema?").
+			Description("An output schema structures JSON data this agent produces.").
+			Affirmative("Yes").
+			Negative("No (freeform output)").
+			Value(&useOutputSchema),
+	).Title(stepTitle(stepChaining, "Structured I/O")).
+		Description("Define an output schema if this agent should produce structured JSON output."))
 
-	// Step: Output Schema Preview - show file contents before confirming
+	// Step 5b: Output schema file picker
+	groups = append(groups, huh.NewGroup(
+		huh.NewFilePicker().
+			Title("Select Output Schema").
+			Description("Choose a .json or .jsonschema file").
+			CurrentDirectory(currentDir()).
+			AllowedTypes([]string{".json", ".jsonschema"}).
+			Value(&res.OutputSchemaFile).
+			Picking(true).
+			Height(10),
+	).Title(stepTitle(stepChaining, "Output Schema")).
+		Description("Select the JSON schema file that defines this agent's output format.").
+		WithHideFunc(func() bool {
+			return !useOutputSchema
+		}))
+
+	// Step 5b-preview: Confirm output schema with preview
 	var confirmOutputSchema bool
-	groups = append(groups,
-		huh.NewGroup(
-			huh.NewNote().
-				Title(fmt.Sprintf("Step %d of %d ─ Output Schema", chainingStepNum, totalSteps)).
-				DescriptionFunc(func() string {
-					if res.OutputSchemaFile == "" {
-						return "No file selected (skipping output schema)"
-					}
-					content, err := readFilePreview(res.OutputSchemaFile, 15)
-					if err != nil {
-						return fmt.Sprintf("Error reading file: %v", err)
-					}
-					return fmt.Sprintf("File: %s\n\n%s", shortenPath(res.OutputSchemaFile), content)
-				}, &res.OutputSchemaFile),
-			huh.NewConfirm().
-				Title("Use this file?").
-				Affirmative("Yes").
-				Negative("No, go back").
-				Value(&confirmOutputSchema),
-		).WithHideFunc(func() bool {
-			return !enableChaining || res.OutputSchemaFile == ""
-		}),
-	)
+	groups = append(groups, huh.NewGroup(
+		NewFilePreviewField().
+			FilePath(&res.OutputSchemaFile).
+			Title("Schema Contents").
+			Height(12),
+		huh.NewConfirm().
+			TitleFunc(func() string {
+				return fmt.Sprintf("Use %s?", shortenPath(res.OutputSchemaFile))
+			}, &res.OutputSchemaFile).
+			Affirmative("Yes").
+			Negative("No, go back").
+			Value(&confirmOutputSchema),
+	).Title(stepTitle(stepChaining, "Output Schema")).
+		Description("Review the schema below.").
+		WithHideFunc(func() bool {
+			return !useOutputSchema || res.OutputSchemaFile == ""
+		}))
 
-	// Step: Review and Confirm
-	var reviewChoice string
-	groups = append(groups,
-		huh.NewGroup(
-			huh.NewNote().
-				Title("Review Configuration").
-				DescriptionFunc(func() string {
-					return buildReviewSummary(handleName, res, systemSource, enableChaining)
-				}, &res),
-			huh.NewSelect[string]().
-				Title("What would you like to do?").
-				Options(
-					huh.NewOption("Create this agent", "create"),
-					huh.NewOption("Cancel", "cancel"),
-				).
-				Value(&reviewChoice),
-		),
-	)
+	// Step 6: Review and Confirm
+	var confirmed bool
 
-	// Step: Cancel Confirmation
-	var confirmCancel bool
-	groups = append(groups,
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Are you sure you want to cancel?").
-				Description("All entered information will be lost.").
-				Affirmative("Yes, cancel").
-				Negative("No, go back").
-				Value(&confirmCancel),
-		).WithHideFunc(func() bool {
-			return reviewChoice != "cancel"
-		}),
-	)
+	// Build review data provider that reads current form state
+	reviewDataProvider := func() []ReviewSection {
+		sections := []ReviewSection{}
 
-	// Create and run the form in alternate screen mode for clean TUI
+		// Handle
+		handle := "@" + strings.TrimPrefix(handleName, "@")
+		sections = append(sections, ReviewSection{Label: "Handle", Value: handle})
+
+		// Description
+		if res.Description != "" {
+			desc := res.Description
+			if len(desc) > 50 {
+				desc = desc[:47] + "..."
+			}
+			sections = append(sections, ReviewSection{Label: "Description", Value: desc})
+		}
+
+		// Model
+		sections = append(sections, ReviewSection{Label: "Model", Value: res.Model})
+
+		// Tools
+		if len(res.AllowedTools) > 0 {
+			sections = append(sections, ReviewSection{Label: "Tools", Value: strings.Join(res.AllowedTools, ", ")})
+		} else {
+			sections = append(sections, ReviewSection{Label: "Tools", Value: "(none)"})
+		}
+
+		// Skills
+		if len(res.Skills) > 0 {
+			skillList := strings.Join(res.Skills, ", ")
+			if len(skillList) > 50 {
+				skillList = skillList[:47] + "..."
+			}
+			sections = append(sections, ReviewSection{Label: "Skills", Value: skillList})
+		} else {
+			sections = append(sections, ReviewSection{Label: "Skills", Value: "(none)"})
+		}
+
+		// System prompt - expandable
+		if systemSource == "file" && res.SystemFile != "" {
+			sections = append(sections, ReviewSection{
+				Label:      "System",
+				Value:      shortenPath(res.SystemFile),
+				Expandable: true,
+				Content:    readFileContent(res.SystemFile),
+			})
+		} else if res.SystemMessage != "" {
+			preview := res.SystemMessage
+			if len(preview) > 40 {
+				preview = preview[:37] + "..."
+			}
+			preview = strings.ReplaceAll(preview, "\n", " ")
+			sections = append(sections, ReviewSection{
+				Label:      "System",
+				Value:      preview,
+				Expandable: true,
+				Content:    res.SystemMessage,
+			})
+		} else {
+			sections = append(sections, ReviewSection{Label: "System", Value: "(default)"})
+		}
+
+		// System wrapper status
+		if res.NoSystemWrapper {
+			sections = append(sections, ReviewSection{Label: "System Wrapper", Value: "disabled"})
+		}
+
+		// Input schema - expandable (independent of output schema)
+		if res.InputSchemaFile != "" {
+			sections = append(sections, ReviewSection{
+				Label:      "Input Schema",
+				Value:      shortenPath(res.InputSchemaFile),
+				Expandable: true,
+				Content:    readFileContent(res.InputSchemaFile),
+			})
+		}
+
+		// Output schema - expandable (independent of input schema)
+		if res.OutputSchemaFile != "" {
+			sections = append(sections, ReviewSection{
+				Label:      "Output Schema",
+				Value:      shortenPath(res.OutputSchemaFile),
+				Expandable: true,
+				Content:    readFileContent(res.OutputSchemaFile),
+			})
+		}
+
+		return sections
+	}
+
+	groups = append(groups, huh.NewGroup(
+		NewReviewField().
+			DataProvider(reviewDataProvider).
+			Height(18),
+		huh.NewConfirm().
+			Title("Create this agent?").
+			Affirmative("Create").
+			Negative("Cancel").
+			Value(&confirmed),
+	).Title(stepTitle(stepConfirm, "Review & Confirm")).
+		Description("Review your configuration. Use ↑/↓ to navigate, Enter to expand/collapse."))
+
+	// Create and run the form with full-screen layout
 	form := huh.NewForm(groups...).
-		WithTheme(huh.ThemeCharm()).
-		WithShowHelp(true).
-		WithProgramOptions(tea.WithAltScreen())
+		WithTheme(wizardTheme()).
+		WithShowHelp(false) // We handle help in the wrapper
 
-	err := form.Run()
-	if err != nil {
+	wrapper := newFullScreenForm(form)
+	if err := wrapper.Run(); err != nil {
 		if err.Error() == "user aborted" {
 			return AgentCreateResult{}, fmt.Errorf("agent creation cancelled")
 		}
 		return AgentCreateResult{}, err
 	}
 
-	// Check if user cancelled
-	if reviewChoice == "cancel" && confirmCancel {
+	// Check if form was aborted
+	if wrapper.State() == huh.StateAborted {
 		return AgentCreateResult{}, fmt.Errorf("agent creation cancelled")
 	}
-	if reviewChoice != "create" {
+
+	// Check if user cancelled
+	if !confirmed {
 		return AgentCreateResult{}, fmt.Errorf("agent creation cancelled")
 	}
 
@@ -474,77 +535,6 @@ func (f *AgentCreateForm) Run(ctx context.Context) (AgentCreateResult, error) {
 	return res, nil
 }
 
-// buildReviewSummary creates a formatted summary of the agent configuration.
-func buildReviewSummary(handleName string, res AgentCreateResult, systemSource string, enableChaining bool) string {
-	var b strings.Builder
-
-	handle := "@" + strings.TrimPrefix(handleName, "@")
-
-	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("  Handle:        %s\n", handle))
-	if res.Description != "" {
-		desc := res.Description
-		if len(desc) > 40 {
-			desc = desc[:37] + "..."
-		}
-		b.WriteString(fmt.Sprintf("  Description:   %s\n", desc))
-	}
-	b.WriteString(fmt.Sprintf("  Model:         %s\n", res.Model))
-
-	if len(res.AllowedTools) > 0 {
-		b.WriteString(fmt.Sprintf("  Tools:         %s\n", strings.Join(res.AllowedTools, ", ")))
-	} else {
-		b.WriteString("  Tools:         (none)\n")
-	}
-
-	if len(res.Skills) > 0 {
-		skillList := strings.Join(res.Skills, ", ")
-		if len(skillList) > 40 {
-			skillList = skillList[:37] + "..."
-		}
-		b.WriteString(fmt.Sprintf("  Skills:        %s\n", skillList))
-	} else {
-		b.WriteString("  Skills:        (none)\n")
-	}
-
-	if systemSource == "file" && res.SystemFile != "" {
-		path := res.SystemFile
-		if home := userHomeDir(); home != "" {
-			path = strings.Replace(path, home, "~", 1)
-		}
-		b.WriteString(fmt.Sprintf("  System:        %s\n", path))
-	} else if res.SystemMessage != "" {
-		preview := res.SystemMessage
-		if len(preview) > 35 {
-			preview = preview[:32] + "..."
-		}
-		preview = strings.ReplaceAll(preview, "\n", " ")
-		b.WriteString(fmt.Sprintf("  System:        %s\n", preview))
-	}
-
-	if enableChaining {
-		b.WriteString("  Chaining:      enabled\n")
-		if res.InputSchemaFile != "" {
-			path := res.InputSchemaFile
-			if home := userHomeDir(); home != "" {
-				path = strings.Replace(path, home, "~", 1)
-			}
-			b.WriteString(fmt.Sprintf("    Input:       %s\n", path))
-		}
-		if res.OutputSchemaFile != "" {
-			path := res.OutputSchemaFile
-			if home := userHomeDir(); home != "" {
-				path = strings.Replace(path, home, "~", 1)
-			}
-			b.WriteString(fmt.Sprintf("    Output:      %s\n", path))
-		}
-	}
-
-	b.WriteString("\n")
-
-	return b.String()
-}
-
 // userHomeDir returns the user's home directory or empty string if unavailable.
 func userHomeDir() string {
 	home, _ := os.UserHomeDir()
@@ -559,52 +549,6 @@ func currentDir() string {
 	return userHomeDir()
 }
 
-// wrapText wraps text at the specified width, adding a prefix to each line.
-func wrapText(text string, width int, prefix string) string {
-	if len(text) <= width {
-		return prefix + text
-	}
-
-	var lines []string
-	words := strings.Fields(text)
-	var currentLine string
-
-	for _, word := range words {
-		if currentLine == "" {
-			currentLine = word
-		} else if len(currentLine)+1+len(word) <= width {
-			currentLine += " " + word
-		} else {
-			lines = append(lines, prefix+currentLine)
-			currentLine = word
-		}
-	}
-	if currentLine != "" {
-		lines = append(lines, prefix+currentLine)
-	}
-
-	return strings.Join(lines, "\n")
-}
-
-// readFilePreview reads a file and returns the first maxLines lines for preview.
-func readFilePreview(path string, maxLines int) (string, error) {
-	expanded := expandPath(path)
-	data, err := os.ReadFile(expanded)
-	if err != nil {
-		return "", err
-	}
-
-	content := string(data)
-	lines := strings.Split(content, "\n")
-
-	if len(lines) > maxLines {
-		lines = lines[:maxLines]
-		lines = append(lines, fmt.Sprintf("... (%d more lines)", len(strings.Split(content, "\n"))-maxLines))
-	}
-
-	return strings.Join(lines, "\n"), nil
-}
-
 // shortenPath shortens a path by replacing home directory with ~.
 func shortenPath(path string) string {
 	home := userHomeDir()
@@ -612,35 +556,6 @@ func shortenPath(path string) string {
 		return "~" + strings.TrimPrefix(path, home)
 	}
 	return path
-}
-
-// readFileContent reads the full content of a file.
-func readFileContent(path string) (string, error) {
-	expanded := expandPath(path)
-	data, err := os.ReadFile(expanded)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-// renderMarkdownPreview renders markdown content using glamour with word wrap.
-func renderMarkdownPreview(content string, width int) string {
-	r, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(width),
-	)
-	if err != nil {
-		// Fallback to plain text if glamour fails
-		return content
-	}
-
-	rendered, err := r.Render(content)
-	if err != nil {
-		return content
-	}
-
-	return strings.TrimSpace(rendered)
 }
 
 // expandPath expands ~ to the user's home directory.
@@ -653,4 +568,48 @@ func expandPath(path string) string {
 		return strings.Replace(path, "~", home, 1)
 	}
 	return path
+}
+
+// wordWrap wraps text to the specified width, joining lines with newline and indent.
+func wordWrap(text string, width int) string {
+	if len(text) <= width {
+		return text
+	}
+
+	var lines []string
+	words := strings.Fields(text)
+	var currentLine strings.Builder
+
+	for _, word := range words {
+		if currentLine.Len() == 0 {
+			currentLine.WriteString(word)
+		} else if currentLine.Len()+1+len(word) <= width {
+			currentLine.WriteString(" ")
+			currentLine.WriteString(word)
+		} else {
+			lines = append(lines, currentLine.String())
+			currentLine.Reset()
+			currentLine.WriteString(word)
+		}
+	}
+
+	if currentLine.Len() > 0 {
+		lines = append(lines, currentLine.String())
+	}
+
+	// Join with newline and indent for continuation lines
+	if len(lines) == 0 {
+		return text
+	}
+	if len(lines) == 1 {
+		return lines[0]
+	}
+
+	var result strings.Builder
+	result.WriteString(lines[0])
+	for i := 1; i < len(lines); i++ {
+		result.WriteString("\n    ")
+		result.WriteString(lines[i])
+	}
+	return result.String()
 }

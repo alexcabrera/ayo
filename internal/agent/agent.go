@@ -28,6 +28,9 @@ type Config struct {
 	Description string   `json:"description,omitempty"`
 	AllowedTools []string `json:"allowed_tools,omitempty"`
 	
+	// System prompt configuration
+	NoSystemWrapper bool `json:"no_system_wrapper,omitempty"` // Skip prefix/suffix wrapping
+	
 	// Skill configuration
 	Skills            []string `json:"skills,omitempty"`             // Explicit include list
 	ExcludeSkills     []string `json:"exclude_skills,omitempty"`     // Explicit exclude list
@@ -188,17 +191,19 @@ func loadFromDir(cfg config.Config, normalized string, baseDir string, isBuiltIn
 	}
 	agentSystem := strings.TrimSpace(string(systemBytes))
 
-	// Load prefix and suffix using priority-based lookup
+	// Load prefix and suffix using priority-based lookup (unless NoSystemWrapper is set)
 	var prefix, suffix string
-	if cfg.SystemPrefix != "" {
-		prefix = strings.TrimSpace(readOptional(cfg.SystemPrefix))
-	} else if prefixPath := paths.FindPromptFile("system-prefix.md"); prefixPath != "" {
-		prefix = strings.TrimSpace(readOptional(prefixPath))
-	}
-	if cfg.SystemSuffix != "" {
-		suffix = strings.TrimSpace(readOptional(cfg.SystemSuffix))
-	} else if suffixPath := paths.FindPromptFile("system-suffix.md"); suffixPath != "" {
-		suffix = strings.TrimSpace(readOptional(suffixPath))
+	if !agentConfig.NoSystemWrapper {
+		if cfg.SystemPrefix != "" {
+			prefix = strings.TrimSpace(readOptional(cfg.SystemPrefix))
+		} else if prefixPath := paths.FindPromptFile("system-prefix.md"); prefixPath != "" {
+			prefix = strings.TrimSpace(readOptional(prefixPath))
+		}
+		if cfg.SystemSuffix != "" {
+			suffix = strings.TrimSpace(readOptional(cfg.SystemSuffix))
+		} else if suffixPath := paths.FindPromptFile("system-suffix.md"); suffixPath != "" {
+			suffix = strings.TrimSpace(readOptional(suffixPath))
+		}
 	}
 
 	// Build environment context block (placed at top of system prompt)

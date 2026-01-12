@@ -1,21 +1,19 @@
-# ayo CLI
+# Agent Instructions
 
-**CRITICAL: After every code change, you MUST add/maintain tests and keep them passing. NEVER reply to the user while tests are failing. Never skip tests.**
-**CRITICAL: Do not modify anything under ./.read-only (vendored, read-only). Explore only.**
-**CRITICAL: Always use `./install.sh` to build the application. This script automatically installs to `.local/bin/` unless on a clean `main` branch in sync with origin. If you cannot use the script, you MUST set `GOBIN=$(pwd)/.local/bin` manually. NEVER install to the standard GOBIN location unless on an unmodified `main` branch that is in sync with `origin/main`.**
-**CRITICAL: Never use emojis or unicode glyphs that have inherent colors. Only use colorizable unicode characters from these categories:**
-- **Geometric shapes:** `◆ ◇ ● ○ ◐ ◑ ◒ ◓ ◉ ◎ ■ □ ▪ ▫ ▲ △ ▼ ▽ ▶ ▷ ◀ ◁ ▸ ▹`
-- **Box drawing:** `─ │ ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼ ═ ║ ╭ ╮ ╯ ╰`
-- **Arrows:** `→ ← ↑ ↓ ↔ ⇒ ⇐ ➜ ➤`
-- **Dingbats/symbols:** `✓ ✗ ❯ ❮ • ‣ ★ ☆ ⋯ ≡`
-- **Braille (spinners):** `⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏`
-- **Block elements:** `█ ▓ ▒ ░ ▀ ▄ ▌ ▐`
-
-**Never use emojis like:** 🤖 ⚡ 🎯 ✅ ❌ ⚠ ℹ ☰ ⚙ or any character that renders with inherent color. This ensures the UI respects user terminal theme preferences.
+**CRITICAL:** After every code change, you MUST add/maintain tests and keep them passing. NEVER reply to the user while tests are failing. Never skip tests.
+**CRITICAL:** Do not modify anything under ./.read-only (vendored, read-only). Explore only.
+**CRITICAL:** Always use `./install.sh` to build the application. This script automatically installs to `.local/bin/` unless on a clean `main` branch in sync with origin. If you cannot use the script, you MUST set `GOBIN=$(pwd)/.local/bin` manually. NEVER install to the standard GOBIN location unless on an unmodified `main` branch that is in sync with `origin/main`.
+**CRITICAL:** Never use emojis or unicode glyphs that have inherent colors. This ensures the UI respects user terminal theme preferences. The following is a non-exhaustive list:
+	- **Geometric shapes:** `◆ ◇ ● ○ ◐ ◑ ◒ ◓ ◉ ◎ ■ □ ▪ ▫ ▲ △ ▼ ▽ ▶ ▷ ◀ ◁ ▸ ▹`
+	- **Box drawing:** `─ │ ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼ ═ ║ ╭ ╮ ╯ ╰`
+	- **Arrows:** `→ ← ↑ ↓ ↔ ⇒ ⇐ ➜ ➤`
+	- **Dingbats/symbols:** `✓ ✗ ❯ ❮ • ‣ ★ ☆ ⋯ ≡`
+	- **Braille (spinners):** `⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏`
+	- **Block elements:** `█ ▓ ▒ ░ ▀ ▄ ▌ ▐`
+- **CRITICAL:** All command examples in documentation (README.md, AGENTS.md, etc.) must work if copy/pasted.
 
 ## Documentation Guidelines
 
-**CRITICAL: All command examples in documentation (README.md, AGENTS.md, etc.) must work if copy/pasted.**
 - Use real agent handles and skill names that exist (e.g., `@ayo`, `@ayo.example.chain.code-reviewer`, `debugging`)
 - For commands that create new entities (like `ayo agents create @myagent`), placeholders are acceptable since they will create the entity
 - Directory structure diagrams showing hypothetical user content are acceptable (e.g., `@myagent/` to show where user agents go)

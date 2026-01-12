@@ -182,6 +182,9 @@ func createAgentCmd(cfgPath *string) *cobra.Command {
 		inputSchema  string
 		outputSchema string
 
+		// System prompt options
+		noSystemWrapper bool
+
 		// Dev mode
 		devMode bool
 	)
@@ -249,14 +252,26 @@ Examples:
 						BuiltinDir:    builtin.SkillsInstallDir(),
 					})
 
-					// Available tools
-					availableTools := []string{"bash", "agent_call"}
+					// Available tools with descriptions
+					availableTools := []ui.ToolInfo{
+						{Name: "bash", Description: "Execute shell commands"},
+						{Name: "agent_call", Description: "Delegate tasks to other agents"},
+					}
+
+					// Get existing agent handles for conflict detection (pre-normalized)
+					handleList, _ := agent.ListHandles(cfg)
+					existingHandles := make(map[string]struct{}, len(handleList))
+					for _, h := range handleList {
+						normalized := strings.ToLower(strings.TrimPrefix(h, "@"))
+						existingHandles[normalized] = struct{}{}
+					}
 
 					form := ui.NewAgentCreateForm(ui.AgentCreateFormOptions{
 						Models:          modelIDs,
 						AvailableSkills: discoveredSkills.Skills,
 						AvailableTools:  availableTools,
 						PrefilledHandle: handle,
+						ExistingHandles: existingHandles,
 					})
 
 					res, err := form.Run(ctx)
@@ -272,6 +287,7 @@ Examples:
 					skills_ = res.Skills
 					ignoreBuiltinSkills = res.IgnoreBuiltinSkills
 					ignoreSharedSkills = res.IgnoreSharedSkills
+					noSystemWrapper = res.NoSystemWrapper
 					system = res.SystemMessage
 					inputSchema = res.InputSchemaFile
 					outputSchema = res.OutputSchemaFile
@@ -329,6 +345,7 @@ Examples:
 					Model:               model,
 					Description:         description,
 					AllowedTools:        tools,
+					NoSystemWrapper:     noSystemWrapper,
 					Skills:              skills_,
 					ExcludeSkills:       excludeSkills,
 					IgnoreBuiltinSkills: ignoreBuiltinSkills,
@@ -378,6 +395,9 @@ Examples:
 	// Schema flags
 	cmd.Flags().StringVar(&inputSchema, "input-schema", "", "path to input JSON schema file (for chaining)")
 	cmd.Flags().StringVar(&outputSchema, "output-schema", "", "path to output JSON schema file (for chaining)")
+
+	// System prompt flags
+	cmd.Flags().BoolVar(&noSystemWrapper, "no-system-wrapper", false, "disable system prefix/suffix wrapping")
 
 	// Dev mode flag
 	cmd.Flags().BoolVar(&devMode, "dev", false, "create agent in local ./.config/ayo/ directory for testing")
