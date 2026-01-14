@@ -132,13 +132,11 @@ func (f *ReviewField) loadSections() {
 		}
 	}
 
-	// Ensure selectedIdx is valid and points to an expandable section
-	f.selectedIdx = -1
-	for i, s := range f.sections {
-		if s.Expandable {
-			f.selectedIdx = i
-			break
-		}
+	// Ensure selectedIdx is valid - start at first section
+	if len(f.sections) > 0 {
+		f.selectedIdx = 0
+	} else {
+		f.selectedIdx = -1
 	}
 
 	f.contentDirty = true
@@ -191,8 +189,8 @@ func (f *ReviewField) renderContent() string {
 			}
 		}
 
-		// Highlight selected row
-		if f.focused && i == f.selectedIdx && section.Expandable {
+		// Highlight selected row (all sections, not just expandable)
+		if f.focused && i == f.selectedIdx {
 			line = f.styles.selected.Render(line)
 		}
 
@@ -202,9 +200,9 @@ func (f *ReviewField) renderContent() string {
 		// Show expanded content
 		if section.Expandable && section.Expanded && section.Content != "" {
 			content := section.Content
-			// Render markdown if it looks like markdown - use fast shared renderer
+			// Render markdown if it looks like markdown - use shared renderer with syntax highlighting
 			if strings.Contains(content, "#") || strings.Contains(content, "```") || strings.Contains(content, "**") || strings.Contains(content, "- ") {
-				if r := getFastRenderer(); r != nil {
+				if r := getPreviewRenderer(); r != nil {
 					rendered, err := r.Render(content)
 					if err == nil {
 						content = strings.TrimSpace(rendered)
@@ -269,14 +267,14 @@ func (f *ReviewField) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return f, huh.PrevField
 		case key.Matches(msg, f.keymap.Up):
 			oldIdx := f.selectedIdx
-			f.moveToPrevExpandable()
+			f.moveToPrevSection()
 			if oldIdx != f.selectedIdx {
 				f.viewport.SetContent(f.renderContent())
 			}
 			return f, nil
 		case key.Matches(msg, f.keymap.Down):
 			oldIdx := f.selectedIdx
-			f.moveToNextExpandable()
+			f.moveToNextSection()
 			if oldIdx != f.selectedIdx {
 				f.viewport.SetContent(f.renderContent())
 			}
@@ -299,23 +297,17 @@ func (f *ReviewField) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return f, cmd
 }
 
-// moveToPrevExpandable moves selection to previous expandable section.
-func (f *ReviewField) moveToPrevExpandable() {
-	for i := f.selectedIdx - 1; i >= 0; i-- {
-		if f.sections[i].Expandable {
-			f.selectedIdx = i
-			return
-		}
+// moveToPrevSection moves selection to previous section.
+func (f *ReviewField) moveToPrevSection() {
+	if f.selectedIdx > 0 {
+		f.selectedIdx--
 	}
 }
 
-// moveToNextExpandable moves selection to next expandable section.
-func (f *ReviewField) moveToNextExpandable() {
-	for i := f.selectedIdx + 1; i < len(f.sections); i++ {
-		if f.sections[i].Expandable {
-			f.selectedIdx = i
-			return
-		}
+// moveToNextSection moves selection to next section.
+func (f *ReviewField) moveToNextSection() {
+	if f.selectedIdx < len(f.sections)-1 {
+		f.selectedIdx++
 	}
 }
 

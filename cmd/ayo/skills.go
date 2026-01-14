@@ -31,7 +31,6 @@ func newSkillsCmd(cfgPath *string) *cobra.Command {
 	cmd.AddCommand(showSkillCmd(cfgPath))
 	cmd.AddCommand(validateSkillCmd())
 	cmd.AddCommand(createSkillCmd(cfgPath))
-	cmd.AddCommand(dirSkillCmd())
 	cmd.AddCommand(updateSkillsCmd(cfgPath))
 
 	return cmd
@@ -282,6 +281,7 @@ func validateSkillCmd() *cobra.Command {
 
 func createSkillCmd(cfgPath *string) *cobra.Command {
 	var shared bool
+	var devMode bool
 
 	cmd := &cobra.Command{
 		Use:   "create <name>",
@@ -295,12 +295,18 @@ func createSkillCmd(cfgPath *string) *cobra.Command {
 				return fmt.Errorf("invalid skill name: %s", errors[0])
 			}
 
+			// If dev mode, use local config directory
+			if devMode {
+				paths.SetLocalDevMode()
+			}
+
 			return withConfig(cfgPath, func(cfg config.Config) error {
 				var skillDir string
-				if shared {
+				if shared || devMode {
+					// --shared or --dev: create in skills directory (cfg.SkillsDir respects dev mode)
 					skillDir = filepath.Join(cfg.SkillsDir, name)
 				} else {
-					// Use current directory
+					// Default: use current directory
 					cwd, err := os.Getwd()
 					if err != nil {
 						return err
@@ -359,24 +365,7 @@ Show example interactions.
 	}
 
 	cmd.Flags().BoolVar(&shared, "shared", false, "create in shared skills directory")
-
-	return cmd
-}
-
-func dirSkillCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:    "dir",
-		Short:  "Show skills directories",
-		Long:   "Shows paths to user and built-in skill directories.",
-		Hidden: false,
-		Args:   cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("Skill directories:")
-			fmt.Printf("  User:     %s\n", paths.SkillsDir())
-			fmt.Printf("  Built-in: %s\n", builtin.SkillsInstallDir())
-			return nil
-		},
-	}
+	cmd.Flags().BoolVar(&devMode, "dev", false, "create skill in local ./.config/ayo/ directory for testing")
 
 	return cmd
 }

@@ -34,7 +34,6 @@ func newAgentsCmd(cfgPath *string) *cobra.Command {
 	cmd.AddCommand(listAgentsCmd(cfgPath))
 	cmd.AddCommand(createAgentCmd(cfgPath))
 	cmd.AddCommand(showAgentCmd(cfgPath))
-	cmd.AddCommand(dirAgentCmd())
 	cmd.AddCommand(updateAgentsCmd(cfgPath))
 
 	return cmd
@@ -485,24 +484,6 @@ func showAgentCmd(cfgPath *string) *cobra.Command {
 
 				return nil
 			})
-		},
-	}
-
-	return cmd
-}
-
-func dirAgentCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:    "dir",
-		Short:  "Show agents directories",
-		Long:   "Shows paths to user and built-in agent directories.",
-		Hidden: false,
-		Args:   cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("Agent directories:")
-			fmt.Printf("  User:     %s\n", paths.AgentsDir())
-			fmt.Printf("  Built-in: %s\n", builtin.InstallDir())
-			return nil
 		},
 	}
 

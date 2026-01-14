@@ -163,10 +163,8 @@ func newSetupCmd(cfgPath *string) *cobra.Command {
 				sui.Info("  ayo                    Start chat with @ayo")
 				sui.Info("  ayo agents list        List available agents")
 				sui.Info("  ayo agents create      Create a new agent")
-				sui.Info("  ayo agents dir         Go to agents directory")
 				sui.Info("  ayo skills list        List available skills")
 				sui.Info("  ayo skills create      Create a new skill")
-				sui.Info("  ayo skills dir         Go to skills directory")
 				sui.Blank()
 
 				sui.Complete("Setup complete!")

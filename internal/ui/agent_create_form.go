@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/huh"
 
 	"ayo/internal/skills"
@@ -235,7 +236,7 @@ func (f *AgentCreateForm) Run(ctx context.Context) (AgentCreateResult, error) {
 	groups = append(groups, huh.NewGroup(
 		huh.NewText().
 			Title("System Message").
-			Description(fmt.Sprintf("ctrl+e to open in %s", editorName)).
+			Description(fmt.Sprintf("ctrl+o to open in %s", editorName)).
 			Placeholder("You are a helpful assistant...").
 			Value(&res.SystemMessage).
 			CharLimit(0).
@@ -264,7 +265,7 @@ func (f *AgentCreateForm) Run(ctx context.Context) (AgentCreateResult, error) {
 		}))
 
 	// Step 4b-preview: Confirm system prompt file with preview
-	var confirmSystemFile bool
+	var confirmSystemFile bool = true // Preselect Yes
 	groups = append(groups, huh.NewGroup(
 		NewFilePreviewField().
 			FilePath(&res.SystemFile).
@@ -284,15 +285,18 @@ func (f *AgentCreateForm) Run(ctx context.Context) (AgentCreateResult, error) {
 		}))
 
 	// Step 4c: System Wrapper Option (shown after system prompt is defined)
+	// Note: useGuardrails is the inverse of NoSystemWrapper
+	// true = keep guardrails (NoSystemWrapper=false), false = disable (NoSystemWrapper=true)
+	var useGuardrails bool = true // Default to keeping guardrails
 	groups = append(groups, huh.NewGroup(
 		huh.NewConfirm().
-			Title("Disable System Wrapper?").
-			Description("WARNING: Not recommended. The wrapper provides essential tool instructions,\nsafety guidelines, and consistent behavior. Only disable if you fully\nunderstand the implications and need complete control.").
-			Affirmative("Yes, I understand the risks").
-			Negative("No, keep wrapper (recommended)").
-			Value(&res.NoSystemWrapper),
+			Title("Use System Guardrails?").
+			Description("Guardrails provide essential tool instructions, safety guidelines,\nand consistent behavior. Disabling may cause unexpected results.").
+			Affirmative("Yes, keep guardrails").
+			Negative("No, accept risks").
+			Value(&useGuardrails),
 	).Title(stepTitle(stepSystem, "System Prompt")).
-		Description("The system wrapper is strongly recommended. It provides critical instructions\nfor tool usage, error handling, and agent behavior that most agents need.\n\nDisabling it may cause tools to malfunction or produce unexpected results."))
+		Description("The system guardrails are strongly recommended. They provide critical\ninstructions for tool usage, error handling, and agent behavior."))
 
 	// Step 5: Structured I/O - Input Schema
 	var useInputSchema bool
@@ -323,7 +327,7 @@ func (f *AgentCreateForm) Run(ctx context.Context) (AgentCreateResult, error) {
 		}))
 
 	// Step 5a-preview: Confirm input schema with preview
-	var confirmInputSchema bool
+	var confirmInputSchema bool = true // Preselect Yes
 	groups = append(groups, huh.NewGroup(
 		NewFilePreviewField().
 			FilePath(&res.InputSchemaFile).
@@ -371,7 +375,7 @@ func (f *AgentCreateForm) Run(ctx context.Context) (AgentCreateResult, error) {
 		}))
 
 	// Step 5b-preview: Confirm output schema with preview
-	var confirmOutputSchema bool
+	var confirmOutputSchema bool = true // Preselect Yes
 	groups = append(groups, huh.NewGroup(
 		NewFilePreviewField().
 			FilePath(&res.OutputSchemaFile).
@@ -490,14 +494,19 @@ func (f *AgentCreateForm) Run(ctx context.Context) (AgentCreateResult, error) {
 		huh.NewConfirm().
 			Title("Create this agent?").
 			Affirmative("Create").
-			Negative("Cancel").
+			Negative("Go Back").
 			Value(&confirmed),
 	).Title(stepTitle(stepConfirm, "Review & Confirm")).
 		Description("Review your configuration. Use ↑/↓ to navigate, Enter to expand/collapse."))
 
+	// Create custom keymap with ctrl+o for editor instead of ctrl+e
+	customKeymap := huh.NewDefaultKeyMap()
+	customKeymap.Text.Editor = key.NewBinding(key.WithKeys("ctrl+o"), key.WithHelp("ctrl+o", "open editor"))
+
 	// Create and run the form with full-screen layout
 	form := huh.NewForm(groups...).
 		WithTheme(wizardTheme()).
+		WithKeyMap(customKeymap).
 		WithShowHelp(false) // We handle help in the wrapper
 
 	wrapper := newFullScreenForm(form)
@@ -521,6 +530,9 @@ func (f *AgentCreateForm) Run(ctx context.Context) (AgentCreateResult, error) {
 	// Normalize handle
 	handleName = strings.TrimPrefix(handleName, "@")
 	res.Handle = "@" + handleName
+
+	// Convert useGuardrails (true = keep guardrails) to NoSystemWrapper (true = disable)
+	res.NoSystemWrapper = !useGuardrails
 
 	// If file source was selected, read the file content
 	if systemSource == "file" && res.SystemFile != "" {

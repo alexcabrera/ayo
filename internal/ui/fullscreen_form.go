@@ -39,20 +39,22 @@ var defaultFormKeyMap = formKeyMap{
 	Select:   key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select")),
 	Skip:     key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "skip")),
 	Back:     key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("S-tab", "back")),
-	Quit:     key.NewBinding(key.WithKeys("ctrl+c", "esc"), key.WithHelp("esc", "quit")),
+	Quit:     key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl-c", "cancel")),
 	navigate: key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑/↓", "navigate")),
 	scroll:   key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("pgup/dn", "scroll")),
 }
 
 // fullScreenForm wraps a huh.Form to provide full-screen layout with pinned help.
 type fullScreenForm struct {
-	form      *huh.Form
-	help      help.Model
-	keyMap    formKeyMap
-	helpStyle lipgloss.Style
-	width     int
-	height    int
-	ready     bool
+	form            *huh.Form
+	help            help.Model
+	keyMap          formKeyMap
+	helpStyle       lipgloss.Style
+	width           int
+	height          int
+	ready           bool
+	showCancelDialog bool
+	cancelSelection  int // 0 = No, go back (default), 1 = Yes, cancel
 }
 
 // newFullScreenForm creates a new full-screen form wrapper.
@@ -66,6 +68,7 @@ func newFullScreenForm(form *huh.Form) *fullScreenForm {
 		helpStyle: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241")).
 			Padding(0, 1),
+		cancelSelection: 0, // Default to "No, go back"
 	}
 }
 
@@ -74,7 +77,53 @@ func (m *fullScreenForm) Init() tea.Cmd {
 }
 
 func (m *fullScreenForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle cancel dialog if shown
+	if m.showCancelDialog {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "left", "h":
+				m.cancelSelection = 0
+				return m, nil
+			case "right", "l":
+				m.cancelSelection = 1
+				return m, nil
+			case "enter":
+				if m.cancelSelection == 1 {
+					// User confirmed cancel
+					m.form.State = huh.StateAborted
+					return m, tea.Quit
+				}
+				// Go back to form
+				m.showCancelDialog = false
+				return m, nil
+			case "esc", "n":
+				// Cancel the dialog, go back to form
+				m.showCancelDialog = false
+				return m, nil
+			case "y":
+				// Confirm cancel
+				m.form.State = huh.StateAborted
+				return m, tea.Quit
+			case "ctrl+c":
+				// Double ctrl-c confirms cancel
+				m.form.State = huh.StateAborted
+				return m, tea.Quit
+			}
+		case tea.WindowSizeMsg:
+			m.width = msg.Width
+			m.height = msg.Height
+		}
+		return m, nil
+	}
+
 	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if msg.String() == "ctrl+c" {
+			m.showCancelDialog = true
+			m.cancelSelection = 0 // Default to "No, go back"
+			return m, nil
+		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -124,6 +173,7 @@ func (m *fullScreenForm) View() string {
 
 	// Inner dimensions (accounting for 1 char padding)
 	innerHeight := m.height - 2
+	innerWidth := m.width - 2
 
 	// Help bar at bottom
 	helpView := m.helpStyle.Render(m.help.View(m.keyMap))
@@ -152,9 +202,96 @@ func (m *fullScreenForm) View() string {
 		helpView,
 	)
 
+	// If showing cancel dialog, overlay it
+	if m.showCancelDialog {
+		content = m.renderCancelDialog(innerWidth, innerHeight)
+	}
+
 	// Apply 1 character padding around the entire content
 	paddedStyle := lipgloss.NewStyle().Padding(1, 1)
 	return paddedStyle.Render(content)
+}
+
+// renderCancelDialog renders the cancel confirmation dialog.
+func (m *fullScreenForm) renderCancelDialog(width, height int) string {
+	// Button text constants for consistent sizing
+	const noButtonText = "No, go back"
+	const yesButtonText = "Yes, cancel"
+
+	// Calculate button width - use the longer button text plus padding
+	buttonWidth := len(yesButtonText) + 4 // +4 for padding (2 on each side)
+	if len(noButtonText)+4 > buttonWidth {
+		buttonWidth = len(noButtonText) + 4
+	}
+
+	// Dialog styles
+	dialogStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#a78bfa")).
+		Padding(1, 2).
+		Width(50)
+
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#a78bfa"))
+
+	messageStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#e5e7eb"))
+
+	// Base button style with fixed width for consistent sizing
+	buttonBaseStyle := lipgloss.NewStyle().
+		Width(buttonWidth).
+		Align(lipgloss.Center)
+
+	selectedButtonStyle := buttonBaseStyle.
+		Bold(true).
+		Background(lipgloss.Color("#a78bfa")).
+		Foreground(lipgloss.Color("#1a1a2e"))
+
+	unselectedButtonStyle := buttonBaseStyle.
+		Foreground(lipgloss.Color("#6b7280"))
+
+	dangerButtonStyle := buttonBaseStyle.
+		Bold(true).
+		Background(lipgloss.Color("#ef4444")).
+		Foreground(lipgloss.Color("#ffffff"))
+
+	unselectedDangerStyle := buttonBaseStyle.
+		Foreground(lipgloss.Color("#ef4444"))
+
+	// Build dialog content
+	title := titleStyle.Render("Cancel Agent Creation?")
+	message := messageStyle.Render("Are you sure you want to cancel?\nAll progress will be lost.")
+
+	// Buttons: [No, go back] on left (default selected), [Yes, cancel] on right (danger)
+	var noButton, yesButton string
+	if m.cancelSelection == 0 {
+		noButton = selectedButtonStyle.Render(noButtonText)
+		yesButton = unselectedDangerStyle.Render(yesButtonText)
+	} else {
+		noButton = unselectedButtonStyle.Render(noButtonText)
+		yesButton = dangerButtonStyle.Render(yesButtonText)
+	}
+
+	// Fixed spacing between buttons
+	buttonSpacer := lipgloss.NewStyle().Width(4).Render("")
+	buttons := lipgloss.JoinHorizontal(lipgloss.Center, noButton, buttonSpacer, yesButton)
+
+	// Center the buttons row
+	buttonsRow := lipgloss.NewStyle().Width(46).Align(lipgloss.Center).Render(buttons)
+
+	dialogContent := lipgloss.JoinVertical(lipgloss.Center,
+		title,
+		"",
+		message,
+		"",
+		buttonsRow,
+	)
+
+	dialog := dialogStyle.Render(dialogContent)
+
+	// Center the dialog
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, dialog)
 }
 
 // Run runs the full-screen form.

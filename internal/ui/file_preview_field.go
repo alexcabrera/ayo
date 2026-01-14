@@ -13,28 +13,26 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 )
 
-// Shared fast markdown renderer (no syntax highlighting)
+// Shared markdown renderer with syntax highlighting for file preview
 var (
-	fastRendererOnce sync.Once
-	fastRenderer     *glamour.TermRenderer
+	previewRendererOnce sync.Once
+	previewRenderer     *glamour.TermRenderer
 )
 
-// getFastRenderer returns a shared glamour renderer optimized for speed.
-// Uses Ascii color profile to disable chroma syntax highlighting.
-func getFastRenderer() *glamour.TermRenderer {
-	fastRendererOnce.Do(func() {
+// getPreviewRenderer returns a shared glamour renderer with full syntax highlighting.
+func getPreviewRenderer() *glamour.TermRenderer {
+	previewRendererOnce.Do(func() {
 		r, err := glamour.NewTermRenderer(
-			glamour.WithColorProfile(termenv.Ascii),
+			glamour.WithAutoStyle(),
 			glamour.WithWordWrap(100),
 		)
 		if err == nil {
-			fastRenderer = r
+			previewRenderer = r
 		}
 	})
-	return fastRenderer
+	return previewRenderer
 }
 
 // FilePreviewField is a custom huh field that displays file contents in a scrollable viewport.
@@ -159,9 +157,9 @@ func (f *FilePreviewField) loadContent() {
 
 	content := string(data)
 
-	// Render markdown files with fast renderer (no syntax highlighting)
+	// Render markdown files with syntax highlighting
 	if isMarkdownFile(path) {
-		if r := getFastRenderer(); r != nil {
+		if r := getPreviewRenderer(); r != nil {
 			rendered, err := r.Render(content)
 			if err == nil {
 				content = strings.TrimSpace(rendered)
