@@ -186,6 +186,9 @@ func createAgentCmd(cfgPath *string) *cobra.Command {
 
 		// Dev mode
 		devMode bool
+
+		// Non-interactive mode
+		nonInteractive bool
 	)
 
 	cmd := &cobra.Command{
@@ -193,30 +196,66 @@ func createAgentCmd(cfgPath *string) *cobra.Command {
 		Short: "Create a new agent",
 		Long: `Create a new agent with the specified configuration.
 
-If required flags are not provided, an interactive wizard will guide you through
-the creation process. For non-interactive use, provide all required flags.
+INTERACTIVE MODE (default):
+  If required flags are not provided, an interactive wizard will guide you
+  through the creation process step by step.
+
+NON-INTERACTIVE MODE:
+  To skip the wizard entirely, provide the --non-interactive flag along with
+  the required configuration. At minimum, you need:
+    - @handle (positional argument)
+    - --model or a configured default model
+    - --system or --system-file (or accept the default prompt)
+
+  If --non-interactive is set but required fields are missing, the command
+  will fail with an error instead of launching the wizard.
+
+AVAILABLE MODELS:
+  Models are configured in ~/.config/ayo/ayo.json under the "provider" section.
+  Use 'ayo config show' to see configured models.
+
+AVAILABLE TOOLS:
+  bash         Execute shell commands (default)
+  agent_call   Delegate tasks to other agents
+
+SKILLS:
+  Skills are instruction sets that teach agents specialized tasks.
+  Use 'ayo skills list' to see available skills.
+
+CHAINING (Structured I/O):
+  Agents can be chained via Unix pipes using JSON schemas:
+    - --input-schema: Validates JSON input from stdin
+    - --output-schema: Structures JSON output for piping to other agents
 
 Examples:
-  # Interactive mode
+  # Interactive wizard
+  ayo agents create
+
+  # Interactive with pre-filled handle
   ayo agents create @myagent
 
-  # Full CLI creation
-  ayo agents create @code-helper \
-    --model gpt-4.1 \
-    --description "Helps write clean code" \
-    --system "You are an expert programmer..." \
+  # Minimal non-interactive (uses defaults)
+  ayo agents create @helper --model gpt-4.1 -n
+
+  # Full non-interactive with all options
+  ayo agents create @code-reviewer \
+    --non-interactive \
+    --model claude-sonnet-4-20250514 \
+    --description "Reviews code for best practices" \
+    --system "You are an expert code reviewer..." \
     --tools bash,agent_call \
-    --skills debugging
+    --skills debugging \
+    --no-system-wrapper
 
   # Using external files
-  ayo agents create @reviewer \
-    --model claude-3.5-sonnet \
-    --system-file ~/prompts/reviewer.md \
+  ayo agents create @analyzer -n \
+    --model gpt-4.1 \
+    --system-file ~/prompts/analyzer.md \
     --input-schema ~/schemas/input.json \
     --output-schema ~/schemas/output.json
 
-  # Create in local project directory for testing
-  ayo agents create @myagent --dev`,
+  # Create in local project directory (for development)
+  ayo agents create @test-agent --dev --model gpt-4.1 -n`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var handle string
@@ -239,7 +278,13 @@ Examples:
 				}
 
 				// Determine if we need interactive mode
-				needsInteractive := handle == "" || model == "" || (system == "" && systemFile == "")
+				// In non-interactive mode, we require handle; model defaults to cfg.DefaultModel
+				needsInteractive := !nonInteractive && (handle == "" || model == "" || (system == "" && systemFile == ""))
+
+				// If non-interactive but missing handle, fail immediately
+				if nonInteractive && handle == "" {
+					return fmt.Errorf("handle is required in non-interactive mode (e.g., ayo agents create @myagent -n)")
+				}
 
 				if needsInteractive {
 					ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Minute)
@@ -377,29 +422,30 @@ Examples:
 	}
 
 	// Core flags
-	cmd.Flags().StringVarP(&model, "model", "m", "", "model to use")
-	cmd.Flags().StringVarP(&description, "description", "d", "", "agent description")
-	cmd.Flags().StringVarP(&system, "system", "s", "", "system message text")
-	cmd.Flags().StringVarP(&systemFile, "system-file", "f", "", "path to system message markdown file")
+	cmd.Flags().StringVarP(&model, "model", "m", "", "model to use (see 'ayo config show' for available models)")
+	cmd.Flags().StringVarP(&description, "description", "d", "", "brief description of what this agent does")
+	cmd.Flags().StringVarP(&system, "system", "s", "", "system prompt text (mutually exclusive with --system-file)")
+	cmd.Flags().StringVarP(&systemFile, "system-file", "f", "", "path to system prompt file (.md or .txt)")
 
 	// Tool flags
-	cmd.Flags().StringSliceVarP(&tools, "tools", "t", nil, "allowed tools (comma-separated or repeated)")
+	cmd.Flags().StringSliceVarP(&tools, "tools", "t", nil, "allowed tools: bash, agent_call (comma-separated)")
 
 	// Skill flags
-	cmd.Flags().StringSliceVar(&skills_, "skills", nil, "skills to include (comma-separated or repeated)")
-	cmd.Flags().StringSliceVar(&excludeSkills, "exclude-skills", nil, "skills to exclude")
-	cmd.Flags().BoolVar(&ignoreBuiltinSkills, "ignore-builtin-skills", false, "ignore built-in skills")
-	cmd.Flags().BoolVar(&ignoreSharedSkills, "ignore-shared-skills", false, "ignore shared skills")
+	cmd.Flags().StringSliceVar(&skills_, "skills", nil, "skills to include (comma-separated, see 'ayo skills list')")
+	cmd.Flags().StringSliceVar(&excludeSkills, "exclude-skills", nil, "skills to exclude from this agent")
+	cmd.Flags().BoolVar(&ignoreBuiltinSkills, "ignore-builtin-skills", false, "don't load built-in skills")
+	cmd.Flags().BoolVar(&ignoreSharedSkills, "ignore-shared-skills", false, "don't load user shared skills")
 
-	// Schema flags
-	cmd.Flags().StringVar(&inputSchema, "input-schema", "", "path to input JSON schema file (for chaining)")
-	cmd.Flags().StringVar(&outputSchema, "output-schema", "", "path to output JSON schema file (for chaining)")
+	// Schema flags for chaining
+	cmd.Flags().StringVar(&inputSchema, "input-schema", "", "JSON schema file for validating stdin input")
+	cmd.Flags().StringVar(&outputSchema, "output-schema", "", "JSON schema file for structuring stdout output")
 
-	// System prompt flags
-	cmd.Flags().BoolVar(&noSystemWrapper, "no-system-wrapper", false, "disable system prefix/suffix wrapping")
+	// System prompt options
+	cmd.Flags().BoolVar(&noSystemWrapper, "no-system-wrapper", false, "disable system guardrails (not recommended)")
 
-	// Dev mode flag
-	cmd.Flags().BoolVar(&devMode, "dev", false, "create agent in local ./.config/ayo/ directory for testing")
+	// Mode flags
+	cmd.Flags().BoolVarP(&nonInteractive, "non-interactive", "n", false, "skip wizard, fail if required fields missing")
+	cmd.Flags().BoolVar(&devMode, "dev", false, "create in local ./.config/ayo/ directory")
 
 	return cmd
 }

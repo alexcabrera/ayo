@@ -313,6 +313,7 @@ func (r *Runner) runChatWithHistory(ctx context.Context, ag agent.Agent, msgs []
 				ui.PrintAgentResponseHeader(ag.Handle)
 			}
 			content.WriteString(text)
+			ui.PrintTextDelta(text)
 			return nil
 		},
 	})
@@ -324,6 +325,11 @@ func (r *Runner) runChatWithHistory(ctx context.Context, ag agent.Agent, msgs []
 		} else {
 			spinner.Stop()
 		}
+	}
+
+	// End text streaming with a newline
+	if textStarted {
+		ui.PrintTextEnd()
 	}
 
 	if err != nil {
@@ -378,8 +384,8 @@ func (r *Runner) runChatWithHistory(ctx context.Context, ag agent.Agent, msgs []
 		return strings.TrimSpace(finalContent), msgs, nil
 	}
 
-	rendered := ui.RenderFinal(finalContent)
-	return strings.TrimSpace(rendered), msgs, nil
+	// Text was already streamed to output, return empty to avoid duplicate
+	return "", msgs, nil
 }
 
 func (r *Runner) agentCallExecutor() func(ctx context.Context, params AgentCallParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {

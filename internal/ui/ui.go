@@ -687,6 +687,16 @@ func (u *UI) PrintReasoningEnd() {
 	u.println()
 }
 
+// PrintTextDelta prints streaming text content.
+func (u *UI) PrintTextDelta(text string) {
+	u.print(text)
+}
+
+// PrintTextEnd prints a newline after text streaming is complete.
+func (u *UI) PrintTextEnd() {
+	u.println()
+}
+
 // PrintThinkingDone prints the "Thought for Xs" summary.
 func (u *UI) PrintThinkingDone(duration string) {
 	indent := u.indent()

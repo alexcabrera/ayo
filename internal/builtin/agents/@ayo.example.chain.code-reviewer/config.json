@@ -1,4 +1,0 @@
-{
-  "description": "Reviews code changes and produces structured findings",
-  "allowed_tools": ["bash"]
-}

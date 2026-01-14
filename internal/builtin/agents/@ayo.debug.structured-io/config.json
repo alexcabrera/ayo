@@ -1,4 +1,0 @@
-{
-  "description": "Debug agent for testing structured input validation - accepts deployment requests",
-  "allowed_tools": ["bash"]
-}

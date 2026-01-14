@@ -1,7 +1,0 @@
-{
-  "description": "Debug agent for testing the web-search skill",
-  "allowed_tools": ["bash"],
-  "skills": ["web-search"],
-  "exclude_skills": ["debugging", "project-summary"],
-  "ignore_shared_skills": true
-}

@@ -1,4 +1,0 @@
-{
-  "description": "Debug agent that calls sub-agents to test nested UI display",
-  "allowed_tools": ["bash", "agent_call"]
-}

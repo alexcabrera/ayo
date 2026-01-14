@@ -14,11 +14,27 @@
 
 ## Documentation Guidelines
 
-- Use real agent handles and skill names that exist (e.g., `@ayo`, `@ayo.example.chain.code-reviewer`, `debugging`)
+- Use real agent handles and skill names that exist (e.g., `@ayo`, `@ayo.research`, `debugging`)
 - For commands that create new entities (like `ayo agents create @myagent`), placeholders are acceptable since they will create the entity
 - Directory structure diagrams showing hypothetical user content are acceptable (e.g., `@myagent/` to show where user agents go)
 - Never use placeholder names like `@agent`, `@myagent`, `@source-agent` in commands that query or operate on existing entities
 - Always test example commands before committing documentation changes
+
+## CLI Skill Maintenance
+
+**CRITICAL:** The `ayo` skill at `internal/builtin/skills/ayo/SKILL.md` documents the CLI for use by agents. **This skill MUST be updated whenever the CLI changes.**
+
+When modifying the CLI:
+1. Add/remove/modify commands or flags
+2. Update `internal/builtin/skills/ayo/SKILL.md` to reflect the changes
+3. Ensure all command examples in the skill are accurate and work when copy/pasted
+4. Keep the flag tables in sync with actual `--help` output
+
+The skill should document:
+- All commands and subcommands with their flags
+- Common workflows and examples
+- Configuration file format
+- Directory structure conventions
 
 ## Preferred Libraries (./.read-only)
 

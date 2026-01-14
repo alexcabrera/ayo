@@ -1,4 +1,0 @@
-{
-  "description": "Converts code review findings into formatted issue reports",
-  "allowed_tools": ["bash"]
-}
